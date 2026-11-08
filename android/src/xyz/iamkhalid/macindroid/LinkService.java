@@ -513,9 +513,18 @@ public class LinkService extends Service {
     }
 
     void sendAsync(byte kind, byte[] payload) {
+        sendAsync(kind, payload, null);
+    }
+
+    /** Like sendAsync, then tells `done` (on the sending thread) whether it went. */
+    void sendAsync(byte kind, byte[] payload, java.util.function.Consumer<Boolean> done) {
         try {
-            io.execute(() -> send(kind, payload));
+            io.execute(() -> {
+                boolean sent = send(kind, payload);
+                if (done != null) done.accept(sent);
+            });
         } catch (RuntimeException ignored) { // shutting down
+            if (done != null) done.accept(false);
         }
     }
 

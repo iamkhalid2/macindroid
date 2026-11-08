@@ -29,7 +29,12 @@ final class Otp {
     /** Or this many after it, in the same sentence ("482913 is your Google verification code"). */
     private static final int AFTER = 50;
 
-    private static final int FLAGS = Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE | Pattern.UNICODE_CHARACTER_CLASS;
+    /**
+     * Unicode \\b, \\w and \\d, so words in any script count. Android's regex engine (ICU) works that way already and
+     * throws on this flag; desktop Java, where test.sh runs the test set, needs it to behave the same.
+     */
+    private static final int UNICODE = "Dalvik".equals(System.getProperty("java.vm.name")) ? 0 : Pattern.UNICODE_CHARACTER_CLASS;
+    private static final int FLAGS = Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE | UNICODE;
 
     /**
      * Words that say "this is a code". Words in scripts with spaces are matched whole, plus compounds ending in
@@ -59,7 +64,7 @@ final class Otp {
             + "|認証|確認コード|ワンタイム|パスコード|パスワード|コード|暗証番号"
             + "|รหัส)", FLAGS);
     /** German and Austrian banks' TAN (pushTAN, smsTAN), case-sensitive so it isn't the colour. */
-    private static final Pattern TAN = Pattern.compile("\\b\\p{L}{0,8}TAN\\b", Pattern.UNICODE_CHARACTER_CLASS);
+    private static final Pattern TAN = Pattern.compile("\\b\\p{L}{0,8}TAN\\b", UNICODE);
 
     /** Phrases with "code" in them that aren't one-time codes; blanked before looking for context words. */
     private static final Pattern NOT_CONTEXT = Pattern.compile("\\b(?:"

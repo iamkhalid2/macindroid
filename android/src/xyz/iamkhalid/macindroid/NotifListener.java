@@ -1,7 +1,6 @@
 package xyz.iamkhalid.macindroid;
 
 import android.app.ActivityOptions;
-import android.app.AppOpsManager;
 import android.app.KeyguardManager;
 import android.app.Notification;
 import android.app.NotificationManager;
@@ -49,15 +48,10 @@ public class NotifListener extends NotificationListenerService {
     @Override
     public void onListenerConnected() {
         instance = this;
-        // Android 15+ hides one-time codes from listeners unless setup-phone.sh allowed this app op. Android reads
-        // it when the listener connects, so this line says whether codes can reach the Mac in this session.
-        try {
-            int mode = getSystemService(AppOpsManager.class).unsafeCheckOpNoThrow(
-                    "android:receive_sensitive_notifications", android.os.Process.myUid(), getPackageName());
-            Log.i("Macindroid", mode == AppOpsManager.MODE_ALLOWED ? "one-time codes: visible"
-                    : "one-time codes: hidden by Android; run setup-phone.sh to copy them to the Mac");
-        } catch (RuntimeException ignored) { // an Android without the op
-        }
+        // Android 15+ hides one-time codes from listeners it doesn't trust (see CodeAccess), deciding when the
+        // listener connects; this line says whether codes can reach the Mac in this session.
+        Log.i("Macindroid", CodeAccess.granted(this) ? "one-time codes: visible"
+                : "one-time codes: hidden by Android; allow One-time codes in Macindroid");
     }
 
     @Override
@@ -72,10 +66,11 @@ public class NotifListener extends NotificationListenerService {
         // The phone is awake for this anyway: a cheap moment to try the Mac. Only for notifications worth showing
         // there; ongoing ones (a music player's progress, say) update far too often.
         if (service != null && !LinkService.connected() && worthForwarding(sbn, rankings)) service.nudge();
-        if (service == null || !LinkService.connected()) return;
-        // Codes go even while the phone is in use: you are often signing in on the Mac with the phone in your hand.
+        if (service == null) return;
+        // Codes go even while the phone is in use (you are often signing in on the Mac with the phone in your hand),
+        // and are held for a moment while the link is down, since a code is what tends to wake a sleeping phone.
         sendCode(service, sbn);
-        if (!Config.mirrorNotifications(this)) return;
+        if (!LinkService.connected() || !Config.mirrorNotifications(this)) return;
         if (service.phoneInUse()) return;
         if (!worthForwarding(sbn, rankings)) {
             Log.d("Macindroid", "not forwarding a notification from " + sbn.getPackageName());
@@ -96,7 +91,9 @@ public class NotifListener extends NotificationListenerService {
         forwarded.clear();
         iconsSent.clear();
         LinkService service = LinkService.instance;
-        if (service == null || !Config.mirrorNotifications(this)) return;
+        if (service == null) return;
+        sendHeldCode(service);
+        if (!Config.mirrorNotifications(this)) return;
         try {
             RankingMap rankings = getCurrentRanking();
             for (StatusBarNotification sbn : getActiveNotifications()) if (worthForwarding(sbn, rankings)) forward(service, sbn, true);
@@ -170,6 +167,11 @@ public class NotifListener extends NotificationListenerService {
 
     private static final long CODE_FRESH_MS = 10 * 60_000;
     private final Map<String, Long> codesSent = new HashMap<>(); // code -> elapsedRealtime; main thread
+    /** As long as the Mac keeps a code on its clipboard: older than this, it would only overwrite something newer. */
+    private static final long CODE_HOLD_MS = 2 * 60_000;
+    private byte[] heldCode; // the newest code found while the link was down; main thread
+    private long heldAt;
+    private String heldFrom;
 
     /**
      * Sends a one-time code in a new notification to the Mac, which puts it on the clipboard. Sent before the
@@ -214,10 +216,42 @@ public class NotifListener extends NotificationListenerService {
         String from = conversation && !title.isEmpty() ? title : app;
         try {
             JSONObject o = new JSONObject().put("code", code).put("from", from).put("app", app).put("key", sbn.getKey());
-            service.sendAsync(Proto.CODE, Proto.utf8(o.toString()));
-            Log.i("Macindroid", "sent a one-time code from " + pkg); // package only, never the code
+            deliverCode(service, Proto.utf8(o.toString()), pkg); // the log names the package only, never the code
         } catch (Exception ignored) {
         }
+    }
+
+    /** Sends a code now, or holds it until the link is back if it's down or the send fails. Main thread. */
+    private void deliverCode(LinkService service, byte[] payload, String pkg) {
+        if (!LinkService.connected()) {
+            hold(payload, pkg);
+            return;
+        }
+        service.sendAsync(Proto.CODE, payload, sent -> {
+            if (sent) Log.i("Macindroid", "sent a one-time code from " + pkg);
+            else service.main.post(() -> hold(payload, pkg));
+        });
+    }
+
+    private void hold(byte[] payload, String pkg) {
+        heldCode = payload;
+        heldAt = SystemClock.elapsedRealtime();
+        heldFrom = pkg;
+        Log.i("Macindroid", "holding a one-time code from " + pkg + " until the Mac is back");
+    }
+
+    /** On reconnect: the held code, if it's still fresh enough to be the one you're waiting for. */
+    private void sendHeldCode(LinkService service) {
+        byte[] payload = heldCode;
+        heldCode = null;
+        if (payload == null) return;
+        long age = SystemClock.elapsedRealtime() - heldAt;
+        if (age > CODE_HOLD_MS) {
+            Log.i("Macindroid", "dropped a held one-time code after " + age / 1000 + " s");
+            return;
+        }
+        Log.i("Macindroid", "sending a one-time code held for " + age / 1000 + " s");
+        deliverCode(service, payload, heldFrom);
     }
 
     private static Notification.MessagingStyle.Message lastMessage(Bundle ex) {

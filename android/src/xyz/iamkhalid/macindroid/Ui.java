@@ -241,6 +241,9 @@ final class Ui {
                 a.checkSelfPermission(Manifest.permission.READ_MEDIA_IMAGES) == PackageManager.PERMISSION_GRANTED, "Allow",
                 () -> a.requestPermissions(new String[] {Manifest.permission.READ_MEDIA_IMAGES}, 2)));
         ComponentName listener = new ComponentName(a, NotifListener.class);
+        list.add(new Permission("One-time codes", "Puts sign-in codes on your Mac's clipboard. Android asks you to pick your "
+                + "Mac: open Bluetooth in System Settings on the Mac so it shows up.",
+                CodeAccess.granted(a), "Allow", () -> CodeAccess.request(a)));
         list.add(new Permission("Notification access", "Shows this phone's notifications on your Mac, with Reply.",
                 a.getSystemService(NotificationManager.class).isNotificationListenerAccessGranted(listener), "Allow",
                 () -> a.startActivity(new Intent(Settings.ACTION_NOTIFICATION_LISTENER_DETAIL_SETTINGS)

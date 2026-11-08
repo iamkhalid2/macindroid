@@ -25,7 +25,8 @@ echo "Waiting for the phone (USB debugging on, cable connected, 'Allow' tapped o
 # -g grants READ_LOGS and WRITE_SECURE_SETTINGS at install time; vendor ROMs (ColorOS, MIUI) often refuse the
 # separate pm grant calls below, so they are only a fallback.
 # Android 15+ hides one-time codes from notification listeners. This app op exempts Macindroid so it can copy codes
-# to the Mac. Android checks it when the listener binds, so set it before an update (rebinds) and again after.
+# to the Mac. Android checks it when the listener binds, so set it before an update (rebinds) and again after. Some
+# phones (ColorOS) don't let adb set it; there, One-time codes → Allow in the app links it to the Mac instead.
 "$ADB" shell appops set "$PKG" RECEIVE_SENSITIVE_NOTIFICATIONS allow >/dev/null 2>&1 || true
 "$ADB" install -r -g "$APK"
 "$ADB" shell appops set "$PKG" RECEIVE_SENSITIVE_NOTIFICATIONS allow >/dev/null 2>&1 || true
@@ -33,5 +34,5 @@ echo "Waiting for the phone (USB debugging on, cable connected, 'Allow' tapped o
 "$ADB" shell pm grant "$PKG" android.permission.WRITE_SECURE_SETTINGS >/dev/null 2>&1 || true
 "$ADB" shell appops set "$PKG" SYSTEM_ALERT_WINDOW allow >/dev/null 2>&1 || true
 "$ADB" shell dumpsys deviceidle whitelist +"$PKG" >/dev/null 2>&1 || true
-"$ADB" shell am start -n "$PKG/.Launcher" >/dev/null
+"$ADB" shell am start -n "$PKG/.Launcher" >/dev/null 2>&1 || "$ADB" shell am start -n "$PKG/.HomeActivity" >/dev/null # the launcher icon goes once set up
 echo "Done. Follow the steps on the phone; on the Mac, choose Pair a Phone… in the Macindroid menu."

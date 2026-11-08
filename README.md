@@ -52,9 +52,8 @@ Its icon, a face that's half Mac and half Android, appears in the menu bar, and 
 
 ### 2. On the phone
 
-Macindroid needs a few permissions that only a computer can grant over USB: one lets it notice when you copy
-something while it's in the background, one lets it switch on wireless debugging just while you mirror, and one
-lets it read one‑time codes in notifications, which Android 15 and later hide from apps that read notifications.
+Macindroid needs two permissions that only a computer can grant over USB: one lets it notice when you copy
+something while it's in the background, the other lets it switch on wireless debugging just while you mirror.
 
 1. Install the Android tools on the Mac (with [Homebrew](https://brew.sh)), plus scrcpy for mirroring:
    ```bash
@@ -81,8 +80,9 @@ lets it read one‑time codes in notifications, which Android 15 and later hide 
 
 1. On the phone, tap **Get started** and pick your Mac.
 2. The Mac and the phone each show a six‑digit code. Check they match, then click **Pair** on the Mac.
-3. On the phone, allow what Macindroid asks for: notification access, photos, display over other apps and
-   running in the background. Each one says what it's for.
+3. On the phone, allow what Macindroid asks for: notification access, one‑time codes, photos, display over other
+   apps and running in the background. Each one says what it's for. For **One‑time codes**, Android asks you to
+   pick your Mac from nearby Bluetooth devices; open **System Settings → Bluetooth** on the Mac so it shows up.
 4. Android then asks whether Macindroid may **access all device logs**. Tap **Allow**: that's what lets copies on
    the phone reach the Mac on their own.
 
@@ -132,9 +132,11 @@ to Macindroid), and mirroring over Wi‑Fi needs you to switch on Wireless debug
   Android are never sent. Notifications an app marks as secret aren't
   forwarded, and while you're using the phone nothing is, except one‑time codes.
 - **One‑time codes, handled like passwords.** Android 15 and later replace codes in notifications with
-  *Sensitive notification content hidden* for apps that read notifications. `setup-phone.sh` exempts Macindroid
-  from that with one app op (`RECEIVE_SENSITIVE_NOTIFICATIONS`), which you can undo with
-  `adb shell appops set xyz.iamkhalid.macindroid RECEIVE_SENSITIVE_NOTIFICATIONS default`. The phone looks for a
+  *Sensitive notification content hidden* for apps that read notifications, unless the app is a *companion app*
+  you've linked to a device of yours, as a watch app is. **One‑time codes → Allow** links Macindroid to your Mac in
+  Android's own pairing dialog, and uninstalling Macindroid removes the link.
+  (On phones that allow it, `setup-phone.sh` also sets the `RECEIVE_SENSITIVE_NOTIFICATIONS` app op, which does the
+  same.) The phone looks for a
   4–8 character code next to a word such as *code*, *OTP*, *verification* or *PIN* (in about 30 languages) and
   skips amounts, dates, times, phone numbers, card endings, order numbers and promo codes. Only the code, the sender
   and the app's name go to the Mac. There it is marked concealed and transient for clipboard managers, so they don't
@@ -175,9 +177,9 @@ run `setup-phone.sh`.
 <summary><b>Codes don't reach the Mac's clipboard</b></summary>
 
 Check **Settings → Copy Codes from Phone** is ticked. If the Mac shows the phone's notification as *Sensitive
-notification content hidden*, Android is hiding the code from Macindroid: run `setup-phone.sh` again. Android checks
-this permission when Macindroid starts reading notifications, which the script's reinstall triggers. With the phone
-plugged in, `adb logcat -d -s Macindroid | grep "one-time codes"` says whether codes are visible. A code only counts
+notification content hidden*, Android is hiding the code from Macindroid: open Macindroid on the phone (long‑press
+its Quick Settings tile) and tap **Allow** next to **One‑time codes**. If your Mac isn't listed, open System Settings
+→ Bluetooth on the Mac and try again. With the phone plugged in, `adb logcat -d -s Macindroid | grep "one-time codes"` says whether codes are visible. A code only counts
 as one if a word like *code* or *OTP* is near it, so a message that's only a number isn't copied.
 </details>
 
@@ -218,7 +220,8 @@ The first Android build creates a signing key in `~/.android/macindroid.keystore
 app.
 
 `android/test.sh` checks the one‑time‑code finder against 117 example messages (codes in about 30 languages, and
-messages full of numbers that aren't codes) using plain Java, no phone needed.
+messages full of numbers that aren't codes) using plain Java, no phone needed. `android/test.sh --phone` runs the
+same set on a connected phone too, on Android's own runtime, whose regex engine differs from desktop Java's.
 
 To test the Mac app without a phone, `cd mac && uv run --with cryptography python3 test_client.py` plays the
 phone's part against the running app: ping, a 3 MB file arriving byte‑identical, a corrupted file discarded with
