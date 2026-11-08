@@ -208,3 +208,7 @@ If you installed with `mac/install.sh`, also run
 `launchctl bootout gui/$(id -u)/xyz.iamkhalid.macindroid; rm ~/Library/LaunchAgents/xyz.iamkhalid.macindroid.plist`.
 
 On the phone, go to Settings → Apps → Macindroid → Uninstall, or run `adb uninstall xyz.iamkhalid.macindroid`.
+
+## License
+
+[MIT](LICENSE). scrcpy, which Mirror Phone uses, is a separate project under the Apache License 2.0.
