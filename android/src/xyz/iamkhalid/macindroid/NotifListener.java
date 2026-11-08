@@ -69,6 +69,9 @@ public class NotifListener extends NotificationListenerService {
     @Override
     public void onNotificationPosted(StatusBarNotification sbn, RankingMap rankings) {
         LinkService service = LinkService.instance;
+        // The phone is awake for this anyway: a cheap moment to try the Mac. Only for notifications worth showing
+        // there; ongoing ones (a music player's progress, say) update far too often.
+        if (service != null && !LinkService.connected() && worthForwarding(sbn, rankings)) service.nudge();
         if (service == null || !LinkService.connected()) return;
         // Codes go even while the phone is in use: you are often signing in on the Mac with the phone in your hand.
         sendCode(service, sbn);

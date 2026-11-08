@@ -1,6 +1,7 @@
 package xyz.iamkhalid.macindroid;
 
 import android.Manifest;
+import android.app.AlarmManager;
 import android.app.KeyguardManager;
 import android.app.Notification;
 import android.app.NotificationChannel;
@@ -21,6 +22,7 @@ import android.net.ConnectivityManager;
 import android.net.LinkAddress;
 import android.net.LinkProperties;
 import android.net.Network;
+import android.net.NetworkCapabilities;
 import android.net.Uri;
 import android.os.BatteryManager;
 import android.os.Build;
@@ -64,6 +66,7 @@ public class LinkService extends Service {
     static final String ACTION_SEND_CLIPBOARD = "xyz.iamkhalid.macindroid.SEND_CLIPBOARD";
     static final String ACTION_SEND_FILES = "xyz.iamkhalid.macindroid.SEND_FILES";
     static final String ACTION_STOP_RING = "xyz.iamkhalid.macindroid.STOP_RING";
+    private static final String ACTION_RETRY = "xyz.iamkhalid.macindroid.RETRY";
     static final String LABEL = "Macindroid";
     static final String CH_STATUS = "status", CH_FILES = "files", CH_ALERTS = "alerts", CH_RING = "ring";
     static final int NOTIFICATION_ID = 1;
@@ -141,6 +144,12 @@ public class LinkService extends Service {
     private ConnectivityManager.NetworkCallback networkCallback;
     private final ClipboardManager.OnPrimaryClipChangedListener clipListener = this::onClipChangedWhileFocused;
     private BroadcastReceiver batteryReceiver;
+    private BroadcastReceiver wakeReceiver;
+    private AlarmManager alarms;
+    private PendingIntent retryAlarm;
+    private PowerManager.WakeLock awake; // held only while trying to reach the Mac, so the phone can't sleep mid-try
+    private volatile long lostAt;        // elapsedRealtime when the Mac was last lost, or a new network appeared
+    private volatile long lastTry;       // elapsedRealtime of the last connection attempt
     private volatile int battery = -1;
     private volatile boolean charging;
     Transfers transfers;
@@ -195,6 +204,26 @@ public class LinkService extends Service {
         photos = new PhotoWatcher(this); // before the network thread, which hands it PHOTO_GET
         // Registering a listener makes Android log a "denied" line for this app on every copy; the log watcher uses it.
         clipboard.addPrimaryClipChangedListener(clipListener);
+        awake = getSystemService(PowerManager.class).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "macindroid:reconnect");
+        awake.setReferenceCounted(false);
+        alarms = getSystemService(AlarmManager.class);
+        retryAlarm = PendingIntent.getBroadcast(this, 0, new Intent(ACTION_RETRY).setPackage(getPackageName()), PendingIntent.FLAG_IMMUTABLE);
+        wakeReceiver = new BroadcastReceiver() {
+            @Override
+            public void onReceive(Context context, Intent intent) {
+                if (ACTION_RETRY.equals(intent.getAction())) {
+                    if (state == CONNECTED) return;
+                    awake.acquire(ATTEMPT_MS);
+                    wake();
+                } else {
+                    nudge(); // the screen came on: the user may be about to use the link
+                }
+            }
+        };
+        IntentFilter wakeFilter = new IntentFilter(ACTION_RETRY);
+        wakeFilter.addAction(Intent.ACTION_SCREEN_ON);
+        registerReceiver(wakeReceiver, wakeFilter, RECEIVER_NOT_EXPORTED);
+        lostAt = SystemClock.elapsedRealtime();
         running = true;
         new Thread(this::networkLoop, "macindroid-net").start();
         new Thread(this::logLoop, "macindroid-log").start();
@@ -203,7 +232,13 @@ public class LinkService extends Service {
         networkCallback = new ConnectivityManager.NetworkCallback() {
             @Override
             public void onAvailable(Network network) {
-                if (state != CONNECTED) wake(); // a new network: retry now instead of waiting out the backoff
+                if (state == CONNECTED) return;
+                NetworkCapabilities caps = getSystemService(ConnectivityManager.class).getNetworkCapabilities(network);
+                if (caps != null && !isLocal(caps)) return; // mobile data: the Mac's LAN address can't answer there
+                // A new network, which the Mac may be on: retry now, and quickly again for a while.
+                lostAt = SystemClock.elapsedRealtime();
+                awake.acquire(ATTEMPT_MS);
+                wake();
             }
 
             @Override
@@ -258,6 +293,12 @@ public class LinkService extends Service {
             unregisterReceiver(batteryReceiver);
         } catch (Exception ignored) {
         }
+        try {
+            unregisterReceiver(wakeReceiver);
+        } catch (Exception ignored) {
+        }
+        alarms.cancel(retryAlarm);
+        awake.release();
         ringer.stop(false);
         photos.stop();
         finishMirror();
@@ -274,14 +315,18 @@ public class LinkService extends Service {
     // ------------------------------------------------------------------ connection
 
     private void networkLoop() {
-        long backoff = 1000;
         boolean useDiscovery = false;
+        awake.acquire(ATTEMPT_MS);
         while (running) {
+            lastTry = SystemClock.elapsedRealtime();
             key = Config.key(this);
             if (key == null) {
                 state = NOT_PAIRED;
                 setStatus("Not paired");
-                pause(10000);
+                awake.release();
+                pause(10000); // pairing happens on screen, with the phone awake
+                awake.acquire(ATTEMPT_MS);
+                lostAt = SystemClock.elapsedRealtime();
                 continue;
             }
             InetSocketAddress target = useDiscovery ? Discovery.findOne(this, Config.macName(this), 4000) : null;
@@ -294,10 +339,10 @@ public class LinkService extends Service {
                 state = SEARCHING;
                 setStatus("Looking for " + Config.macName(this));
                 useDiscovery = true;
-                pause(backoff);
-                backoff = Math.min(backoff * 2, 15000);
+                waitToRetry();
                 continue;
             }
+            boolean linked = false;
             try (Socket s = new Socket()) {
                 s.connect(target, 5000);
                 s.setTcpNoDelay(true);
@@ -309,12 +354,13 @@ public class LinkService extends Service {
                 send(Proto.HELLO, Proto.utf8(deviceName(this)));
                 peer = target.getAddress().getHostAddress();
                 state = CONNECTED;
+                linked = true;
                 setStatus("Connected to " + Config.macName(this));
-                backoff = 1000;
                 useDiscovery = false;
                 sendStatus();
                 NotifListener listener = NotifListener.instance;
                 if (listener != null) main.post(listener::resendActive);
+                awake.release(); // from here, frames from the Mac wake the phone as they arrive
                 DataInputStream in = new DataInputStream(new BufferedInputStream(s.getInputStream(), 64 * 1024));
                 while (running) {
                     byte[] frame = Proto.readFrame(in);
@@ -323,9 +369,11 @@ public class LinkService extends Service {
                     onFrame(plain[0], Arrays.copyOfRange(plain, 1, plain.length));
                 }
             } catch (GeneralSecurityException e) {
+                awake.acquire(ATTEMPT_MS);
                 state = KEY_MISMATCH;
                 setStatus("Pairing key doesn't match the Mac");
             } catch (Exception e) {
+                awake.acquire(ATTEMPT_MS); // the link may have dropped while the phone slept: stay up to retry
                 state = RETRYING;
                 if (running) setStatus("Reconnecting to " + Config.macName(this));
                 useDiscovery = !useDiscovery; // the Mac's address may have changed
@@ -335,10 +383,65 @@ public class LinkService extends Service {
                 out = null;
             }
             if (state == CONNECTED) state = RETRYING;
+            if (linked) lostAt = SystemClock.elapsedRealtime();
             transfers.onDisconnected();
-            pause(backoff);
-            backoff = Math.min(backoff * 2, 15000);
+            waitToRetry();
         }
+        awake.release();
+    }
+
+    /** Longest one attempt can take (discovery, then connect), and so how long it keeps the phone awake at most. */
+    private static final long ATTEMPT_MS = 20_000;
+    /** Android won't schedule an app's alarm sooner than this (AlarmManager's min_futurity). */
+    private static final long SHORTEST_ALARM_MS = 5_000;
+
+    /**
+     * Waits before the next attempt. Object.wait (and every other Java timer) counts only time the CPU is awake,
+     * and with the screen off the phone sleeps most of the time, so a plain 15-second wait could take minutes.
+     * A wakeup alarm, which Doze lets through for an app on the battery-optimisation allowlist, ends the wait on
+     * real time instead.
+     *
+     * Most drops are the Mac app restarting or a Wi-Fi blip, so retries come every second for the first
+     * 15 seconds, with the phone kept awake (an alarm can't be that soon). They then thin out, so a Mac that's
+     * asleep or away costs a dozen short wakeups an hour. With no Wi-Fi, Ethernet or VPN the Mac's address can't
+     * answer, so there are no alarms: a new network wakes the loop, and otherwise it tries when the phone is
+     * awake anyway.
+     */
+    private void waitToRetry() {
+        if (!running) return;
+        long gone = SystemClock.elapsedRealtime() - lostAt;
+        long ms = gone < 15_000 ? 1_000 : gone < 120_000 ? 5_000 : gone < 600_000 ? 15_000 : gone < 1_800_000 ? 60_000 : 300_000;
+        ConnectivityManager cm = getSystemService(ConnectivityManager.class);
+        boolean local = isLocal(cm.getNetworkCapabilities(cm.getActiveNetwork()));
+        if (!local) ms = Math.max(ms, 15_000);
+        boolean alarm = local && ms >= SHORTEST_ALARM_MS;
+        if (alarm) {
+            long at = SystemClock.elapsedRealtime() + ms;
+            // Exact needs the allowlist (setup puts the app there); without it, Android still wakes us, a little later.
+            if (alarms.canScheduleExactAlarms()) alarms.setExactAndAllowWhileIdle(AlarmManager.ELAPSED_REALTIME_WAKEUP, at, retryAlarm);
+            else alarms.setAndAllowWhileIdle(AlarmManager.ELAPSED_REALTIME_WAKEUP, at, retryAlarm);
+        }
+        if (ms >= SHORTEST_ALARM_MS) awake.release();
+        pause(ms);
+        if (alarm) alarms.cancel(retryAlarm);
+        awake.acquire(ATTEMPT_MS);
+    }
+
+    /** Wi-Fi, Ethernet or a VPN: a network the Mac can be reached on. Over mobile data its LAN address can't answer. */
+    private static boolean isLocal(NetworkCapabilities caps) {
+        return caps != null && (caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)
+                || caps.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET) || caps.hasTransport(NetworkCapabilities.TRANSPORT_VPN));
+    }
+
+    /**
+     * The phone is awake for another reason (a notification arrived, the screen came on), so trying the Mac now
+     * costs next to nothing: do it rather than wait for the next scheduled attempt.
+     */
+    void nudge() {
+        if (state == CONNECTED || state == NOT_PAIRED || state == STARTING) return;
+        if (SystemClock.elapsedRealtime() - lastTry < 30_000) return;
+        awake.acquire(ATTEMPT_MS);
+        wake();
     }
 
     private void onFrame(byte kind, byte[] payload) {

@@ -157,8 +157,9 @@ to Macindroid), and mirroring over Wi‑Fi needs you to switch on Wireless debug
 <summary><b>The menu says "Looking for your phone · same Wi‑Fi?"</b></summary>
 
 Check that both are on the same Wi‑Fi network, and not a guest network: guest networks often keep devices from
-seeing each other. On the Mac, check System Settings → Privacy & Security → Local Network → Macindroid is on. If
-the phone's screen has been off for a while, waking it reconnects it at once.
+seeing each other. On the Mac, check System Settings → Privacy & Security → Local Network → Macindroid is on. The
+phone reconnects by itself within seconds of the Mac coming back, even with its screen off; once the Mac has been
+gone for half an hour it checks only every few minutes, to save battery, and waking the phone reconnects it at once.
 </details>
 
 <details>

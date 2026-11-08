@@ -16,6 +16,7 @@
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
     <!-- Granted once over USB by setup-phone.sh (adb install -g):
          READ_LOGS lets the app notice copies made in other apps;
          WRITE_SECURE_SETTINGS lets it switch Wireless debugging on for a mirroring session and off afterwards. -->
