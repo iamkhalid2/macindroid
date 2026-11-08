@@ -1,0 +1,5 @@
+build/
+dist/
+*.keystore
+signing.env
+.DS_Store
