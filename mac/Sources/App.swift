@@ -105,7 +105,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// What the menu's items are, apart from live values (battery, progress).
     private func currentShape() -> String {
         [Store.key == nil, link.connected, link.ringing, mirror.running, mirror.available,
-         transfers.waiting > 0, browserTarget().0, browserTarget().1, updates.latest?.version ?? "", phoneAppOutdated,
+         transfers.waiting > 0, browserTarget().0, browserTarget().1, updates.latest?.version ?? "", updates.installing, phoneAppOutdated,
          link.status?.power ?? true].map { "\($0)" }.joined(separator: "|")
             + transfers.live.map(\.key).joined(separator: ",") + "|\(transfers.recent.count)"
     }
@@ -171,8 +171,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         if let update = updates.latest {
             menu.addItem(.separator())
-            let get = item("Update Available: Macindroid \(update.version)", #selector(openUpdate), tile: "arrow.down.circle.fill",
-                           tint: .controlAccentColor)
+            let get = item(updates.installing ? "Installing Macindroid \(update.version)…" : "Install Macindroid \(update.version)",
+                           #selector(installUpdate), tile: "arrow.down.circle.fill", tint: .controlAccentColor)
+            get.isEnabled = !updates.installing
             menu.addItem(get)
         }
         if Store.key != nil, link.connected, phoneAppOutdated || link.status?.power == false {
@@ -253,9 +254,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     @objc private func pairPhone() { pairing.show() }
     @objc private func getPhoneApp() { phoneApp.show(update: false) }
-    @objc private func updatePhoneApp() { phoneApp.show(update: true) }
+    @objc private func updatePhoneApp() {
+        guard let status = link.status, status.updates, let phone = link.phone else { return phoneApp.show(update: true) }
+        PhoneUpdate.offerIfNeeded(status, peer: ObjectIdentifier(phone), force: true)
+        notifications.postLocal(id: "phone-update", title: "Update ready on \(link.phoneName)",
+                                body: "Tap Update in Macindroid on the phone, then Install.", info: [:])
+    }
     @objc private func setUpPower() { power.show() }
-    @objc private func openUpdate() { if let page = updates.latest?.page { NSWorkspace.shared.open(page) } }
+    @objc private func installUpdate() { updates.install() }
 
     /// The phone runs an older Macindroid than the one bundled in this Mac app.
     private var phoneAppOutdated: Bool {

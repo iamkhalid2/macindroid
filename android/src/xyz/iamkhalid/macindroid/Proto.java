@@ -27,6 +27,7 @@ final class Proto {
     /** A one-time code found in a phone notification: JSON {code, from, app, key}. Never logged. */
     static final byte CODE = 40;
     static final byte POWER_SETUP = 41; // phone -> Mac: show the power-features setup window
+    static final byte UPDATE_OFFER = 42, UPDATE_GET = 43, UPDATE_APK = 44; // see Updater
 
     static final int PORT = 47800;
     static final String SERVICE_TYPE = "_macindroid._tcp";

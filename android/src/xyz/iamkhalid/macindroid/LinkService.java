@@ -493,6 +493,12 @@ public class LinkService extends Service {
             case Proto.PHOTO_GET:
                 photos.onGet(payload);
                 break;
+            case Proto.UPDATE_OFFER:
+                Updater.onOffer(this, payload);
+                break;
+            case Proto.UPDATE_APK:
+                Updater.onApk(this, payload);
+                break;
             default: // something a newer Mac app sends: ignore
         }
     }
@@ -545,7 +551,7 @@ public class LinkService extends Service {
         try {
             long version = getPackageManager().getPackageInfo(getPackageName(), 0).getLongVersionCode();
             JSONObject o = new JSONObject().put("battery", battery).put("charging", charging).put("name", deviceName(this))
-                    .put("version", version).put("power", PowerSetup.done(this));
+                    .put("version", version).put("power", PowerSetup.done(this)).put("updates", true);
             sendAsync(Proto.STATUS, Proto.utf8(o.toString()));
         } catch (Exception ignored) {
         }

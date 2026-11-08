@@ -21,6 +21,9 @@ enum Kind: UInt8 {
     case photo = 36, photoGet = 37, photoFull = 38
     case code = 40 // a one-time code from a phone notification: JSON {code, from, app, key}
     case powerSetup = 41 // the phone asks the Mac to show the power-features setup
+    case updateOffer = 42 // Mac -> phone: JSON {version, code, size, show}: this Mac has a newer phone app
+    case updateGet = 43   // phone -> Mac: send it
+    case updateApk = 44   // Mac -> phone: the APK
 }
 
 enum PairMessage: UInt8 { case request = 1, challenge = 2, closed = 3, declined = 4 }
@@ -110,6 +113,7 @@ struct PhoneStatus {
     var charging: Bool
     var version = 0       // the phone app's version code (0 from versions that don't say)
     var power: Bool? = nil // whether the power features are set up (nil from versions that don't say)
+    var updates = false    // whether the phone app can be updated over the link (see PhoneUpdate)
 }
 
 final class Peer {
@@ -234,7 +238,9 @@ final class Link {
         case .status:
             if let info = parseJSON(payload) {
                 status = PhoneStatus(battery: info["battery"] as? Int ?? -1, charging: info["charging"] as? Bool ?? false,
-                                     version: (info["version"] as? NSNumber)?.intValue ?? 0, power: info["power"] as? Bool)
+                                     version: (info["version"] as? NSNumber)?.intValue ?? 0, power: info["power"] as? Bool,
+                                     updates: info["updates"] as? Bool ?? false)
+                if let status { PhoneUpdate.offerIfNeeded(status, peer: ObjectIdentifier(peer)) }
                 if let name = info["name"] as? String, !name.isEmpty { peer.name = name; Store.phoneName = name }
                 onChange?()
             }
@@ -244,6 +250,7 @@ final class Link {
         case .mirrorReady: mirror.phoneReady(parseJSON(payload) ?? [:])
         case .code: receiveCode(payload)
         case .powerSetup: onPowerSetupRequest?()
+        case .updateGet: PhoneUpdate.send()
         case .photo: photos.offered(payload)
         case .photoFull: photos.received(payload)
         default: break

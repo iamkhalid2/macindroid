@@ -57,7 +57,8 @@ public class HomeActivity extends Activity {
     private View glow;
     private ObjectAnimator pulse;
     private TextView statusTitle, statusMac, statusDetail, featureCount;
-    private LinearLayout accessCard, historyList;
+    private LinearLayout accessCard, historyList, updateRow;
+    private TextView updateText, updateButton;
     private final List<FeatureRow> features = new ArrayList<>();
     private final List<TextView> historyTimes = new ArrayList<>();
     private final List<Long> historyStamps = new ArrayList<>();
@@ -101,6 +102,13 @@ public class HomeActivity extends Activity {
         column.addView(footer(), ui.spaced(20));
         setContentView(ui.page(column));
         ui.systemBars();
+        if (getIntent().getBooleanExtra(Updater.EXTRA_UPDATE, false)) Updater.start(this);
+    }
+
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        if (ui != null && intent.getBooleanExtra(Updater.EXTRA_UPDATE, false)) Updater.start(this);
     }
 
     @Override
@@ -109,6 +117,7 @@ public class HomeActivity extends Activity {
         if (ui == null) return;
         needsSignature = ""; // permissions may have changed in Settings
         handler.post(refresh);
+        Updater.resume(this);
     }
 
     @Override
@@ -174,6 +183,16 @@ public class HomeActivity extends Activity {
         filesLp.setMarginStart(ui.px(10));
         actions.addView(files, filesLp);
         card.addView(actions, ui.spaced(16));
+
+        updateRow = ui.row();
+        updateRow.setGravity(Gravity.CENTER_VERTICAL);
+        updateText = ui.text("", 14, ui.on, null);
+        updateRow.addView(updateText, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+        updateButton = ui.chip("Update", ui.primary);
+        updateButton.setOnClickListener(v -> Updater.start(this));
+        updateRow.addView(updateButton, ui.wrap(36));
+        updateRow.setVisibility(View.GONE);
+        card.addView(updateRow, ui.spaced(14));
 
         pulse = ObjectAnimator.ofFloat(mark, View.ALPHA, 0.9f, 0.35f);
         pulse.setDuration(900);
@@ -437,6 +456,7 @@ public class HomeActivity extends Activity {
 
     private void render() {
         renderStatus();
+        renderUpdate();
         renderNeeds();
         renderHistory();
     }
@@ -485,6 +505,15 @@ public class HomeActivity extends Activity {
         if (waiting && !pulse.isStarted()) pulse.start();
         if (!waiting && pulse.isStarted()) pulse.cancel();
         if (!waiting) mark.setAlpha(connected ? 1f : 0.45f);
+    }
+
+    private void renderUpdate() {
+        boolean show = Updater.available(this);
+        updateRow.setVisibility(show ? View.VISIBLE : View.GONE);
+        if (!show) return;
+        String busy = Updater.progress;
+        updateText.setText(busy != null ? busy + "…" : "Macindroid " + Updater.version() + " is ready, from " + Config.macName(this));
+        updateButton.setVisibility(busy == null ? View.VISIBLE : View.GONE);
     }
 
     private void renderNeeds() {

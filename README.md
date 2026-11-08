@@ -137,6 +137,14 @@ start it from the Mac: **Settings → Set Up Power Features…** in the Macindro
 `ADB=/Applications/Macindroid.app/Contents/Helpers/adb bash ~/Downloads/setup-phone.sh`
 </details>
 
+### Updating
+
+When a new version is out, the Mac notifies you and the menu shows **Install Macindroid 1.x**: it downloads the
+release, checks it against the release's checksums and its signature, swaps itself and relaunches, in a few
+seconds. The phone then shows **Update** on its Home screen (and a notification); tap it and Android asks you to
+confirm. The new phone app comes from the Mac over the encrypted link, not from the internet. The first time,
+Android also asks you to let Macindroid install apps: allow it and come back, and the update carries on.
+
 ## Everyday use
 
 - **Copy and paste** as usual, on either device.
@@ -257,6 +265,11 @@ git clone https://github.com/iamkhalid2/macindroid.git && cd macindroid
 ./setup-phone.sh      # builds the APK and installs it over USB (Android SDK with build-tools, JDK 17 or later)
 ./release.sh          # builds both and writes the disk image, APK and checksums to dist/ (first run installs dmgbuild)
 ```
+
+`./release.sh --publish` also tags `v` + the version in `VERSION` and publishes the GitHub release, with notes made
+from the commits since the last one. It refuses unless everything is committed and pushed and the version is new,
+then checks the published checksums against what it built. Installed copies pick the release up within a day. It
+runs on your Mac, not in CI, so the signing key never leaves it.
 
 The first Android build creates a signing key in `~/.android/macindroid.keystore` and records its password in
 `android/signing.env`, which git ignores. Keep both: an update signed with a different key won't install over the

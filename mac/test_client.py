@@ -28,6 +28,7 @@ TEXT, IMAGE, HELLO, PING, PONG = 1, 2, 3, 4, 5
 FILE_OFFER, FILE_CHUNK, FILE_END = 20, 21, 22
 STATUS = 32
 PHOTO, PHOTO_GET, PHOTO_FULL = 36, 37, 38
+UPDATE_OFFER, UPDATE_GET, UPDATE_APK = 42, 43, 44
 failures = 0
 
 
@@ -145,6 +146,16 @@ if "--clipboard" in sys.argv:
     check("Mac->phone text arrives", read_kind(sock, TEXT) == b"copied on mac 123")
     subprocess.run(["pbcopy"], input=saved)
     print("clipboard text restored")
+
+# a phone app older than the one bundled in the Mac app is offered it, and gets exactly the bundled APK
+apk = next((a / "Contents/Resources/Macindroid.apk" for a in (Path.home() / "Applications/Macindroid.app",
+            Path("/Applications/Macindroid.app")) if (a / "Contents/Resources/Macindroid.apk").exists()), None)
+if apk:
+    sock.sendall(frame(STATUS, json.dumps({"battery": 42, "charging": True, "name": phone_name, "version": 1, "updates": True}).encode()))
+    offer = json.loads(read_kind(sock, UPDATE_OFFER))
+    check("an outdated phone app is offered the update", offer.get("code", 0) > 1 and offer.get("size") == apk.stat().st_size)
+    sock.sendall(frame(UPDATE_GET, b""))
+    check("the update sent is the bundled APK, byte for byte", read_kind(sock, UPDATE_APK) == apk.read_bytes())
 
 # a connection with the wrong key is dropped
 bad = socket.create_connection(("127.0.0.1", 47800), timeout=5)
