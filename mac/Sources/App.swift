@@ -25,6 +25,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             drop.autoresizingMask = [.width, .height]
             button.addSubview(drop)
         }
+        photos.anchor = { [weak self] in self?.status.item.button }
         menu.delegate = self
         menu.autoenablesItems = false
         menu.minimumWidth = MenuStyle.width
@@ -191,7 +192,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         sub.autoenablesItems = false
         for (title, key) in [("Sync Clipboard", "syncClipboard"), ("Copy Codes from Phone", "copyCodes"),
                              ("Show Phone Notifications", "phoneNotifications"),
-                             ("Open Links from Phone Automatically", "openLinks")] {
+                             ("Open Links from Phone Automatically", "openLinks"),
+                             ("Show New Photos from Phone", "photoPreviews")] {
             let toggle = item(title, #selector(togglePref(_:)))
             toggle.representedObject = key
             toggle.state = Prefs.flag(key) ? .on : .off

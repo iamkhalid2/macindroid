@@ -18,6 +18,7 @@ enum Kind: UInt8 {
     case notifPost = 10, notifRemove = 11, notifReply = 12, notifAction = 13, notifDismiss = 14, notifOpen = 15
     case fileOffer = 20, fileChunk = 21, fileEnd = 22, fileCancel = 23, link = 24
     case ring = 30, ringStop = 31, status = 32, mirrorPrep = 33, mirrorReady = 34, mirrorDone = 35
+    case photo = 36, photoGet = 37, photoFull = 38
     case code = 40 // a one-time code from a phone notification: JSON {code, from, app, key}
 }
 
@@ -80,6 +81,7 @@ enum Prefs {
     static var phoneNotifications: Bool { flag("phoneNotifications") }
     static var openLinks: Bool { flag("openLinks") }
     static var copyCodes: Bool { flag("copyCodes") }
+    static var photoPreviews: Bool { flag("photoPreviews") }
 }
 
 func framed(_ body: Data) -> Data {
@@ -235,6 +237,8 @@ final class Link {
             onChange?()
         case .mirrorReady: mirror.phoneReady(parseJSON(payload) ?? [:])
         case .code: receiveCode(payload)
+        case .photo: photos.offered(payload)
+        case .photoFull: photos.received(payload)
         default: break
         }
     }
@@ -334,3 +338,4 @@ let clipboard = ClipboardSync()
 let notifications = PhoneNotifications()
 let transfers = Transfers()
 let mirror = Mirror()
+let photos = PhotoPreviews()

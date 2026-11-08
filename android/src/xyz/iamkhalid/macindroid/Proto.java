@@ -23,6 +23,7 @@ final class Proto {
     static final byte NOTIF_POST = 10, NOTIF_REMOVE = 11, NOTIF_REPLY = 12, NOTIF_ACTION = 13, NOTIF_DISMISS = 14, NOTIF_OPEN = 15;
     static final byte FILE_OFFER = 20, FILE_CHUNK = 21, FILE_END = 22, FILE_CANCEL = 23, LINK = 24;
     static final byte RING = 30, RING_STOP = 31, STATUS = 32, MIRROR_PREP = 33, MIRROR_READY = 34, MIRROR_DONE = 35;
+    static final byte PHOTO = 36, PHOTO_GET = 37, PHOTO_FULL = 38;
     /** A one-time code found in a phone notification: JSON {code, from, app, key}. Never logged. */
     static final byte CODE = 40;
 

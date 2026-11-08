@@ -145,6 +145,7 @@ public class LinkService extends Service {
     private volatile boolean charging;
     Transfers transfers;
     Ringer ringer;
+    PhotoWatcher photos;
 
     static void start(Context c) {
         c.startForegroundService(new Intent(c, LinkService.class));
@@ -191,6 +192,7 @@ public class LinkService extends Service {
         startForeground(NOTIFICATION_ID, buildNotification(), ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE);
         transfers = new Transfers(this);
         ringer = new Ringer(this);
+        photos = new PhotoWatcher(this); // before the network thread, which hands it PHOTO_GET
         // Registering a listener makes Android log a "denied" line for this app on every copy; the log watcher uses it.
         clipboard.addPrimaryClipChangedListener(clipListener);
         running = true;
@@ -257,6 +259,7 @@ public class LinkService extends Service {
         } catch (Exception ignored) {
         }
         ringer.stop(false);
+        photos.stop();
         finishMirror();
         pinger.shutdownNow();
         Process p = logcat;
@@ -382,6 +385,9 @@ public class LinkService extends Service {
                 break;
             case Proto.MIRROR_DONE:
                 finishMirror();
+                break;
+            case Proto.PHOTO_GET:
+                photos.onGet(payload);
                 break;
             default: // something a newer Mac app sends: ignore
         }

@@ -6,7 +6,7 @@
 
 <p align="center">
   <b>Your Android phone and your Mac, working as one.</b><br>
-  Clipboard, notifications, files, screen mirroring and Find My Phone, over your own Wi‑Fi.<br>
+  Clipboard, notifications, files, photos, screen mirroring and Find My Phone, over your own Wi‑Fi.<br>
   No account, no cloud, no internet. Everything is end‑to‑end encrypted.
 </p>
 
@@ -27,6 +27,7 @@
 | **One‑time codes** | A sign‑in or verification code that reaches your phone, by text message or in an app's notification, is on the Mac's clipboard within about a second, ready to paste: *Code 482913 from Google copied*. Clipboard managers don't keep it, and it's cleared after two minutes. |
 | **Notifications on your Mac** | Your phone's notifications appear on the Mac while you aren't using the phone, with Reply and the app's own buttons. Clear one on the Mac and it clears on the phone; click one and it opens on the phone. |
 | **Files and links** | Drop files on the menu‑bar icon, or Share → Macindroid on the phone. Files are checksummed and land in Downloads. Send the browser tab you're looking at to the phone in one click. |
+| **Photos and screenshots** | Take a photo or a screenshot on the phone and a preview drops down from the menu‑bar icon: copy it, save it to Downloads or drag it anywhere, at full resolution. |
 | **Mirror your phone** | Use your phone in a window on the Mac, over USB or Wi‑Fi, through [scrcpy](https://github.com/Genymobile/scrcpy). |
 | **Find your phone** | Ring Phone plays an alarm at full volume, even on silent or Do Not Disturb, until you unlock it or press Stop. |
 | **At a glance** | The menu shows your phone's battery and connection. The menu‑bar icon shows a progress ring while files move and a ringing bell while the phone rings. |
@@ -80,8 +81,8 @@ lets it read one‑time codes in notifications, which Android 15 and later hide 
 
 1. On the phone, tap **Get started** and pick your Mac.
 2. The Mac and the phone each show a six‑digit code. Check they match, then click **Pair** on the Mac.
-3. On the phone, allow what Macindroid asks for: notification access, display over other apps and running in
-   the background. Each one says what it's for.
+3. On the phone, allow what Macindroid asks for: notification access, photos, display over other apps and
+   running in the background. Each one says what it's for.
 4. Android then asks whether Macindroid may **access all device logs**. Tap **Allow**: that's what lets copies on
    the phone reach the Mac on their own.
 
@@ -104,6 +105,10 @@ to Macindroid), and mirroring over Wi‑Fi needs you to switch on Wireless debug
 - **Send files** by dropping them on the menu‑bar icon, choosing **Send Files…**, or **Open With → Macindroid** in
   Finder. On the phone, use **Share → Macindroid**. Files arrive in `Downloads` on the Mac and in
   `Download/Macindroid` on the phone.
+- **Photos and screenshots** you take on the phone pop up under the menu‑bar icon for a few seconds (longer while
+  the pointer is on them). **Copy** puts the full‑size picture on the clipboard, **Save** puts it in Downloads, and
+  you can drag it into any app or click it to open it in Preview. Turn it off in Settings → Show New Photos from
+  Phone.
 - **Send a link** from the phone with Share → Macindroid; it opens in your Mac's browser. From the Mac, choose
   **Open Safari Tab on Phone** (or Chrome, Edge, Brave, Arc, Vivaldi) while the browser is in front.
 - **Paste a code**: ask a website for a sign‑in code, and when it arrives on the phone, press ⌘V on the Mac. A
@@ -139,6 +144,10 @@ to Macindroid), and mirroring over Wi‑Fi needs you to switch on Wireless debug
   denied the clipboard. Android 10 and later stop background apps from reading the clipboard, so Macindroid
   watches for that line and then reads the clipboard through an invisible 1×1 window.
   `WRITE_SECURE_SETTINGS` switches wireless debugging on only for the length of a mirroring session.
+- **Photos stay on the phone until you want them.** Only new camera photos and screenshots, taken while the
+  two are connected, are offered, as a preview about 720 pixels across. The original crosses only when you copy,
+  save, drag or open it, and the Mac can ask only for a photo it was offered. Pictures saved from chat apps,
+  downloaded or synced from the cloud are left alone.
 - **Where things live.** On the Mac: the pairing key in `~/Library/Application Support/Macindroid` (readable only
   by you) and a log in `~/Library/Logs/Macindroid.log`.
 
@@ -193,7 +202,7 @@ See step 3 of [On the Mac](#1-on-the-mac). You can check your download against `
 
 ## Build from source
 
-No Xcode project, no Gradle and no third‑party code: about 2,000 lines of Swift (AppKit, Network, CryptoKit) and a
+No Xcode project, no Gradle and no third‑party code: about 2,500 lines of Swift (AppKit, Network, CryptoKit) and a
 Java app built with the plain Android SDK tools.
 
 ```bash

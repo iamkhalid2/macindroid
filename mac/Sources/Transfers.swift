@@ -220,7 +220,7 @@ final class Transfers {
         return clean.isEmpty ? "file" : String(clean.prefix(200))
     }
 
-    private func uniqueURL(_ name: String) -> URL {
+    func uniqueURL(_ name: String) -> URL {
         let base = (name as NSString).deletingPathExtension, ext = (name as NSString).pathExtension
         var candidate = downloads.appendingPathComponent(name)
         var n = 2

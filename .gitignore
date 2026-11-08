@@ -3,3 +3,4 @@ dist/
 *.keystore
 signing.env
 .DS_Store
+__pycache__/

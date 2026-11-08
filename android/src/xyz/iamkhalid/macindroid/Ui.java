@@ -237,6 +237,9 @@ final class Ui {
         list.add(new Permission("Notifications", "Transfer progress, links from your Mac and Find My Phone.",
                 a.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED, "Allow",
                 () -> a.requestPermissions(new String[] {Manifest.permission.POST_NOTIFICATIONS}, 1)));
+        list.add(new Permission("Photos", "Shows new photos and screenshots on your Mac, ready to copy.",
+                a.checkSelfPermission(Manifest.permission.READ_MEDIA_IMAGES) == PackageManager.PERMISSION_GRANTED, "Allow",
+                () -> a.requestPermissions(new String[] {Manifest.permission.READ_MEDIA_IMAGES}, 2)));
         ComponentName listener = new ComponentName(a, NotifListener.class);
         list.add(new Permission("Notification access", "Shows this phone's notifications on your Mac, with Reply.",
                 a.getSystemService(NotificationManager.class).isNotificationListenerAccessGranted(listener), "Allow",
