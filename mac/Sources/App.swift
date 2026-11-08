@@ -1,10 +1,13 @@
 import AppKit
 
-/// Menu-bar UI. Everything lives in one menu; the only window is the pairing panel.
+/// Menu-bar UI. Everything lives in one menu; the windows are only for setting up (pairing, the phone app, power
+/// features).
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var status: StatusBarItem!
     private let menu = NSMenu()
     private let pairing = PairingPanel()
+    private let phoneApp = PhoneAppPanel()
+    private let power = PowerSetupPanel()
     private var menuOpen = false
     private var wasConnected = false
     // Live parts of the open menu, updated in place; the menu is rebuilt only when its shape changes.
@@ -33,6 +36,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         link.onChange = { [weak self] in self?.changed() }
         link.onPairRequest = { [weak self] peer, code in self?.pairing.request(from: peer, code: code) }
+        link.onPowerSetupRequest = { [weak self] in self?.power.show() }
+        updates.onChange = { [weak self] in self?.changed() }
+        updates.start()
         notifications.setup()
         clipboard.start()
         do { try link.start() } catch { log("could not listen on port \(listenPort): \(error)") }
@@ -41,7 +47,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if Store.key == nil { pairing.show() }
     }
 
-    /// Finder's Open With → Macindroid sends files to the phone. macindroid://ring, stop-ring, mirror and menu let
+    /// Finder's Open With → Macindroid sends files to the phone. macindroid://ring, stop-ring, mirror, menu,
+    /// power-setup and phone-app let
     /// Shortcuts, Spotlight or a launcher reach the phone. (Deliberately no URL for sending files: any web page can
     /// open a URL.)
     func application(_ application: NSApplication, open urls: [URL]) {
@@ -52,6 +59,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             case "ring": if !link.ringing { ringPhone() }
             case "stop-ring": if link.ringing { ringPhone() }
             case "mirror": mirror.start()
+            case "power-setup": power.show()
+            case "phone-app": phoneApp.show(update: false)
             case "menu": openMenu(closingAfter: URLComponents(url: url, resolvingAgainstBaseURL: false)?
                 .queryItems?.first { $0.name == "close" }?.value.flatMap(Double.init))
             default: log("unknown action \(url.absoluteString)")
@@ -96,7 +105,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// What the menu's items are, apart from live values (battery, progress).
     private func currentShape() -> String {
         [Store.key == nil, link.connected, link.ringing, mirror.running, mirror.available,
-         transfers.waiting > 0, browserTarget().0, browserTarget().1].map { "\($0)" }.joined(separator: "|")
+         transfers.waiting > 0, browserTarget().0, browserTarget().1, updates.latest?.version ?? "", phoneAppOutdated,
+         link.status?.power ?? true].map { "\($0)" }.joined(separator: "|")
             + transfers.live.map(\.key).joined(separator: ",") + "|\(transfers.recent.count)"
     }
 
@@ -147,15 +157,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 let when = RelativeDateTimeFormatter()
                 when.unitsStyle = .short
                 for (index, done) in transfers.recent.prefix(4).enumerated() {
-                    let entry = item(done.name, #selector(openRecent(_:)), enabled: done.url != nil)
+                    let entry = item(MenuStyle.fit(done.name), #selector(openRecent(_:)), enabled: done.url != nil)
                     entry.tag = index
+                    entry.toolTip = done.name
                     entry.image = MenuStyle.fileIcon(for: done.url)
                     if #available(macOS 27.0, *) { entry.preferredImageVisibility = .visible }
                     let direction = done.toPhone ? "To \(link.phoneName)" : "From \(link.phoneName)"
                     let ago = Date().timeIntervalSince(done.date) < 60 ? "just now" : when.localizedString(for: done.date, relativeTo: Date())
-                    if #available(macOS 14.4, *) { entry.subtitle = "\(direction) · \(ago)" } else { entry.toolTip = direction }
+                    if #available(macOS 14.4, *) { entry.subtitle = "\(direction) · \(ago)" } else { entry.toolTip = "\(done.name)\n\(direction)" }
                     menu.addItem(entry)
                 }
+            }
+        }
+        if let update = updates.latest {
+            menu.addItem(.separator())
+            let get = item("Update Available: Macindroid \(update.version)", #selector(openUpdate), tile: "arrow.down.circle.fill",
+                           tint: .controlAccentColor)
+            menu.addItem(get)
+        }
+        if Store.key != nil, link.connected, phoneAppOutdated || link.status?.power == false {
+            if updates.latest == nil { menu.addItem(.separator()) }
+            if phoneAppOutdated {
+                menu.addItem(item("Update the Phone App…", #selector(updatePhoneApp), tile: "arrow.down.app.fill", tint: .controlAccentColor))
+            }
+            if link.status?.power == false {
+                menu.addItem(item("Turn On Power Features…", #selector(setUpPower), tile: "bolt.fill"))
             }
         }
         menu.addItem(.separator())
@@ -193,7 +219,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         for (title, key) in [("Sync Clipboard", "syncClipboard"), ("Copy Codes from Phone", "copyCodes"),
                              ("Show Phone Notifications", "phoneNotifications"),
                              ("Open Links from Phone Automatically", "openLinks"),
-                             ("Show New Photos from Phone", "photoPreviews")] {
+                             ("Show New Photos from Phone", "photoPreviews"), ("Check for Updates", "checkUpdates")] {
             let toggle = item(title, #selector(togglePref(_:)))
             toggle.representedObject = key
             toggle.state = Prefs.flag(key) ? .on : .off
@@ -204,6 +230,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if LoginItem.managedByAgent { login.toolTip = "Started at login by the LaunchAgent that install.sh set up" }
         sub.addItem(login)
         sub.addItem(.separator())
+        sub.addItem(item("Get the Phone App…", #selector(getPhoneApp)))
+        sub.addItem(item("Set Up Power Features…", #selector(setUpPower), enabled: Tools.adb != nil))
         sub.addItem(item(Store.key == nil ? "Pair a Phone…" : "Pair a Different Phone…", #selector(pairPhone)))
         settings.submenu = sub
         return settings
@@ -224,6 +252,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     // MARK: actions
 
     @objc private func pairPhone() { pairing.show() }
+    @objc private func getPhoneApp() { phoneApp.show(update: false) }
+    @objc private func updatePhoneApp() { phoneApp.show(update: true) }
+    @objc private func setUpPower() { power.show() }
+    @objc private func openUpdate() { if let page = updates.latest?.page { NSWorkspace.shared.open(page) } }
+
+    /// The phone runs an older Macindroid than the one bundled in this Mac app.
+    private var phoneAppOutdated: Bool {
+        guard let v = link.status?.version, v > 0, Tools.apk != nil else { return false }
+        return v < Tools.apkVersionCode
+    }
 
     @objc private func sendFiles() {
         NSApp.activate(ignoringOtherApps: true)
@@ -279,6 +317,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     @objc private func togglePref(_ sender: NSMenuItem) {
         guard let key = sender.representedObject as? String else { return }
         Prefs.toggle(key)
+        if key == "checkUpdates" { updates.check() }
     }
 
     @objc private func toggleLogin() { LoginItem.set(!LoginItem.enabled) }

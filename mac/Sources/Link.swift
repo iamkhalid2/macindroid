@@ -20,6 +20,7 @@ enum Kind: UInt8 {
     case ring = 30, ringStop = 31, status = 32, mirrorPrep = 33, mirrorReady = 34, mirrorDone = 35
     case photo = 36, photoGet = 37, photoFull = 38
     case code = 40 // a one-time code from a phone notification: JSON {code, from, app, key}
+    case powerSetup = 41 // the phone asks the Mac to show the power-features setup
 }
 
 enum PairMessage: UInt8 { case request = 1, challenge = 2, closed = 3, declined = 4 }
@@ -82,6 +83,7 @@ enum Prefs {
     static var openLinks: Bool { flag("openLinks") }
     static var copyCodes: Bool { flag("copyCodes") }
     static var photoPreviews: Bool { flag("photoPreviews") }
+    static var checkUpdates: Bool { flag("checkUpdates") }
 }
 
 func framed(_ body: Data) -> Data {
@@ -106,6 +108,8 @@ func unseal(_ combined: Data, key: SymmetricKey) -> (UInt8, Data)? {
 struct PhoneStatus {
     var battery: Int
     var charging: Bool
+    var version = 0       // the phone app's version code (0 from versions that don't say)
+    var power: Bool? = nil // whether the power features are set up (nil from versions that don't say)
 }
 
 final class Peer {
@@ -124,6 +128,7 @@ final class Link {
     var pairingMode = false
     var onPairRequest: ((Peer, String) -> Void)? // peer, 6-digit code
     var onChange: (() -> Void)?
+    var onPowerSetupRequest: (() -> Void)?
     private(set) var status: PhoneStatus?
     var ringing = false
 
@@ -228,7 +233,8 @@ final class Link {
         case .link: openLink(String(decoding: payload, as: UTF8.self))
         case .status:
             if let info = parseJSON(payload) {
-                status = PhoneStatus(battery: info["battery"] as? Int ?? -1, charging: info["charging"] as? Bool ?? false)
+                status = PhoneStatus(battery: info["battery"] as? Int ?? -1, charging: info["charging"] as? Bool ?? false,
+                                     version: (info["version"] as? NSNumber)?.intValue ?? 0, power: info["power"] as? Bool)
                 if let name = info["name"] as? String, !name.isEmpty { peer.name = name; Store.phoneName = name }
                 onChange?()
             }
@@ -237,6 +243,7 @@ final class Link {
             onChange?()
         case .mirrorReady: mirror.phoneReady(parseJSON(payload) ?? [:])
         case .code: receiveCode(payload)
+        case .powerSetup: onPowerSetupRequest?()
         case .photo: photos.offered(payload)
         case .photoFull: photos.received(payload)
         default: break

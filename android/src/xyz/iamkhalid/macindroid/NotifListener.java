@@ -178,6 +178,7 @@ public class NotifListener extends NotificationListenerService {
      * notification itself, so the Mac shows one "Code copied" notice instead of two. The code is never logged.
      */
     private void sendCode(LinkService service, StatusBarNotification sbn) {
+        if (!Config.on(this, Config.CODES)) return;
         String pkg = sbn.getPackageName();
         if (pkg.equals(getPackageName())) return;
         Notification n = sbn.getNotification();

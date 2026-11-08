@@ -4,7 +4,6 @@ import android.app.Activity;
 import android.app.StatusBarManager;
 import android.content.ComponentName;
 import android.content.Intent;
-import android.content.pm.PackageManager;
 import android.graphics.drawable.Icon;
 import android.os.Bundle;
 import android.view.Gravity;
@@ -19,8 +18,8 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
- * First run: welcome → pair with the Mac → permissions → done. Finishing removes Macindroid from the app drawer;
- * from then on it lives in Quick Settings and the notification shade.
+ * First run: welcome → pair with the Mac → permissions → done. Afterwards the launcher icon and the Quick Settings
+ * tile both open the home screen.
  */
 public class OnboardingActivity extends Activity {
     private static final int WELCOME = 0, PAIR = 1, PERMISSIONS = 2, DONE = 3;
@@ -53,7 +52,10 @@ public class OnboardingActivity extends Activity {
     protected void onResume() {
         super.onResume();
         if (ui == null) return;
-        if (step == PERMISSIONS) show(PERMISSIONS); // returning from a Settings screen
+        if (step == PERMISSIONS && walking) {
+            host.postDelayed(() -> { if (walking && !isFinishing()) walk(); }, 350); // the next one, after a beat
+            show(PERMISSIONS);
+        } else if (step == PERMISSIONS) show(PERMISSIONS); // returning from a Settings screen
         else if (step < PERMISSIONS && pairing == null && Config.paired(this)) show(PERMISSIONS);
     }
 
@@ -101,6 +103,7 @@ public class OnboardingActivity extends Activity {
         c.setGravity(Gravity.CENTER_HORIZONTAL);
         c.addView(ui.appIcon(96));
         TextView title = ui.text("Macindroid", 32, ui.on, Ui.BOLD);
+        title.setGravity(Gravity.CENTER);
         title.setPadding(0, ui.px(20), 0, 0);
         c.addView(title);
         TextView sub = ui.text("Your phone and your Mac, working as one.", 16, ui.onVar, null);
@@ -109,10 +112,11 @@ public class OnboardingActivity extends Activity {
         c.addView(sub);
 
         LinearLayout card = ui.card();
-        feature(card, "⧉", "Universal clipboard", "Copy on one, paste on the other.");
-        feature(card, "◉", "Notifications on your Mac", "Read and reply without picking up your phone.");
-        feature(card, "↥", "Files and links", "Share to your Mac, or drop files on its menu-bar icon.");
-        feature(card, "▣", "Mirror and find", "Use your phone from the Mac, or make it ring.");
+        feature(card, R.drawable.ic_f_clipboard, "Universal clipboard", "Copy on one, paste on the other.");
+        feature(card, R.drawable.ic_f_bell, "Notifications on your Mac", "Read and reply without picking up your phone.");
+        feature(card, R.drawable.ic_f_key, "One-time codes", "Sign-in codes land on your Mac's clipboard.");
+        feature(card, R.drawable.ic_f_photo, "Photos and files", "New shots pop up on your Mac; share anything across.");
+        feature(card, R.drawable.ic_f_mirror, "Mirror and find", "Use your phone from the Mac, or make it ring.");
         c.addView(card, ui.spaced(32));
         c.addView(new View(this), new LinearLayout.LayoutParams(1, 0, 1)); // push the button down
         TextView go = ui.primaryButton("Get started");
@@ -120,12 +124,9 @@ public class OnboardingActivity extends Activity {
         c.addView(go, ui.height(54, 28));
     }
 
-    private void feature(LinearLayout card, String glyph, String title, String detail) {
+    private void feature(LinearLayout card, int glyph, String title, String detail) {
         LinearLayout r = ui.row();
-        TextView g = ui.text(glyph, 18, ui.onPrimaryContainer, Ui.BOLD);
-        g.setGravity(Gravity.CENTER);
-        g.setBackground(ui.circle(ui.primaryContainer));
-        r.addView(g, new LinearLayout.LayoutParams(ui.px(40), ui.px(40)));
+        r.addView(ui.glyph(glyph, true));
         LinearLayout texts = ui.column();
         texts.setPadding(ui.px(14), 0, 0, 0);
         texts.addView(ui.text(title, 16, ui.on, Ui.MEDIUM));
@@ -136,8 +137,8 @@ public class OnboardingActivity extends Activity {
 
     private void pair(LinearLayout c) {
         c.addView(ui.text("Pair with your Mac", 28, ui.on, Ui.BOLD));
-        TextView how = ui.text("On your Mac, click the Macindroid icon in the menu bar and choose Pair a Phone…  Then pick your Mac here.",
-                15, ui.onVar, null);
+        TextView how = ui.text("Your Mac shows a Set Up Your Phone window. (If it doesn't, click the Macindroid icon in its menu bar "
+                + "and choose Pair a Phone….) Then pick your Mac here.", 15, ui.onVar, null);
         how.setPadding(0, ui.px(8), 0, 0);
         c.addView(how);
 
@@ -250,9 +251,52 @@ public class OnboardingActivity extends Activity {
         }
         c.addView(card, ui.spaced(24));
         c.addView(new View(this), new LinearLayout.LayoutParams(1, 0, 1));
-        TextView next = ui.primaryButton("Continue");
-        next.setOnClickListener(v -> show(DONE));
+        boolean missing = !walkable().isEmpty();
+        TextView next = ui.primaryButton(missing ? "Allow all" : "Continue");
+        next.setOnClickListener(v -> {
+            if (missing) {
+                walking = true;
+                tried.clear();
+                walk();
+            } else {
+                show(DONE);
+            }
+        });
         c.addView(next, ui.height(54, 24));
+        if (missing) {
+            TextView later = ui.button("Not now", android.graphics.Color.TRANSPARENT, ui.onVar, 15);
+            later.setOnClickListener(v -> show(DONE));
+            c.addView(later, ui.height(48, 6));
+        }
+    }
+
+    // "Allow all": opens each of Android's screens in turn and comes back after each one. Code access goes last
+    // because it needs the Mac nearby; power features are set up from the Mac, so they aren't in the walk.
+    private boolean walking;
+    private final java.util.Set<String> tried = new java.util.HashSet<>();
+
+    private java.util.List<Ui.Permission> walkable() {
+        java.util.List<Ui.Permission> list = new java.util.ArrayList<>();
+        Ui.Permission codes = null;
+        for (Ui.Permission p : ui.permissions()) {
+            if (p.granted || p.fix == null || Ui.P_USB.equals(p.key) || tried.contains(p.key)) continue;
+            if (Ui.P_CODES.equals(p.key)) codes = p;
+            else list.add(p);
+        }
+        if (codes != null) list.add(codes);
+        return list;
+    }
+
+    private void walk() {
+        java.util.List<Ui.Permission> next = walkable();
+        if (next.isEmpty()) {
+            walking = false;
+            show(PERMISSIONS);
+            return;
+        }
+        Ui.Permission p = next.get(0);
+        tried.add(p.key);
+        p.fix.run();
     }
 
     private void done(LinearLayout c) {
@@ -261,8 +305,8 @@ public class OnboardingActivity extends Activity {
         TextView title = ui.text("You're all set", 30, ui.on, Ui.BOLD);
         title.setPadding(0, ui.px(20), 0, 0);
         c.addView(title);
-        TextView body = ui.text("Macindroid now stays out of your way and leaves your app drawer. Tap its Quick Settings tile to send "
-                + "your clipboard; long-press the tile to come back here.", 15, ui.onVar, null);
+        TextView body = ui.text("Everything is on. Open Macindroid from your app drawer, or add its Quick Settings tile to reach it "
+                + "from anywhere. Switch features off on the home screen.", 15, ui.onVar, null);
         body.setGravity(Gravity.CENTER);
         body.setPadding(0, ui.px(10), 0, 0);
         c.addView(body);
@@ -272,14 +316,15 @@ public class OnboardingActivity extends Activity {
                 new ComponentName(this, TileService.class), "Macindroid", Icon.createWithResource(this, R.drawable.ic_glyph),
                 getMainExecutor(), result -> {
                     if (result == StatusBarManager.TILE_ADD_REQUEST_RESULT_TILE_ADDED
-                            || result == StatusBarManager.TILE_ADD_REQUEST_RESULT_TILE_ALREADY_ADDED) tile.setText("Tile added ✓");
+                            || result == StatusBarManager.TILE_ADD_REQUEST_RESULT_TILE_ALREADY_ADDED) {
+                        Config.setTileAdded(this, true);
+                        tile.setText("Tile added ✓");
+                    }
                 }));
         c.addView(tile, ui.height(52, 24));
         TextView finish = ui.primaryButton("Finish");
         finish.setOnClickListener(v -> {
             Config.setOnboarded(this);
-            getPackageManager().setComponentEnabledSetting(new ComponentName(getPackageName(), HomeActivity.LAUNCHER_ALIAS),
-                    PackageManager.COMPONENT_ENABLED_STATE_DISABLED, PackageManager.DONT_KILL_APP);
             startActivity(new Intent(this, HomeActivity.class));
             finish();
         });

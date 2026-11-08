@@ -80,6 +80,27 @@ final class Config {
         prefs(c).edit().putBoolean("mirrorNotifications", on).apply();
     }
 
+    // Features the user can switch off on the home screen. All are on until switched off.
+    static final String CLIPBOARD = "clipboard", CODES = "codes", PHOTOS = "photos", LINKS = "links", RING = "ring",
+            MIRROR = "mirror";
+
+    static boolean on(Context c, String feature) {
+        return prefs(c).getBoolean("feature." + feature, true);
+    }
+
+    static void set(Context c, String feature, boolean on) {
+        prefs(c).edit().putBoolean("feature." + feature, on).apply();
+    }
+
+    /** Whether the Quick Settings tile is in the panel, as the tile itself last reported. */
+    static boolean tileAdded(Context c) {
+        return prefs(c).getBoolean("tileAdded", false);
+    }
+
+    static void setTileAdded(Context c, boolean added) {
+        if (tileAdded(c) != added) prefs(c).edit().putBoolean("tileAdded", added).apply();
+    }
+
     /** True while Wireless debugging is on only because the Mac asked for it (so it is switched off afterwards). */
     static boolean wifiAdbByUs(Context c) {
         return prefs(c).getBoolean("wifiAdbByUs", false);

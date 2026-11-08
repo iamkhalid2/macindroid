@@ -26,6 +26,25 @@ enum MenuStyle {
         return icon
     }
 
+    /// A file name shortened in the middle to fit `width` in the menu font, keeping the extension, so a long name
+    /// can't stretch the menu sideways: "SKRILLEX, VR - MIRCHI (DEMO) 2.wav" → "SKRILLEX, VR – MI…EMO) 2.wav".
+    static func fit(_ name: String, width: CGFloat = 214, font: NSFont = .menuFont(ofSize: 0)) -> String {
+        let attributes: [NSAttributedString.Key: Any] = [.font: font]
+        func fits(_ s: String) -> Bool { (s as NSString).size(withAttributes: attributes).width <= width }
+        if fits(name) { return name }
+        let chars = Array(name)
+        let ext = (name as NSString).pathExtension
+        let tailKeep = ext.isEmpty ? 0 : min(ext.count + 1, chars.count / 2)
+        var low = 0, high = chars.count - 1, best = String(chars.prefix(1)) + "…"
+        while low <= high {  // the most characters that still fit, split around the middle
+            let keep = (low + high) / 2
+            let tail = max(tailKeep, keep / 2), head = max(0, keep - tail)
+            let candidate = String(chars.prefix(head)) + "…" + String(chars.suffix(min(tail, chars.count - head)))
+            if fits(candidate) { best = candidate; low = keep + 1 } else { high = keep - 1 }
+        }
+        return best
+    }
+
     static func label(_ text: String, size: CGFloat, weight: NSFont.Weight = .regular, colour: NSColor = .labelColor) -> NSTextField {
         let field = NSTextField(labelWithString: text)
         field.font = .systemFont(ofSize: size, weight: weight)
@@ -290,6 +309,8 @@ final class TransferRowView: NSView {
         autoresizingMask = [.width]
         icon.show(toPhone ? "arrow.up" : "arrow.down", tint: .controlAccentColor)
         name.stringValue = text
+        name.lineBreakMode = .byTruncatingMiddle  // keep the extension in sight
+        name.toolTip = text
         amount.font = .monospacedDigitSystemFont(ofSize: 11, weight: .regular)
         bar.style = .bar
         bar.isIndeterminate = false

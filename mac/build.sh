@@ -44,5 +44,32 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>NSAppleEventsUsageDescription</key><string>Macindroid reads the address of your browser's front tab when you choose to open it on your phone.</string>
 </dict></plist>
 PLIST
+# Mirroring and the power-features setup use scrcpy and adb (scrcpy's own macOS build, which includes adb),
+# bundled so nobody needs Homebrew or Terminal. Pinned and checked against the release's published SHA-256.
+SCRCPY=v5.0.1
+mkdir -p build/cache "$APP/Contents/Helpers" "$APP/Contents/Resources/scrcpy"
+thin=() src=""
+for arch in ${ARCHS:-arm64 x86_64}; do
+  a=$([ "$arch" = arm64 ] && echo aarch64 || echo x86_64)
+  sum=$([ "$a" = aarch64 ] && echo 33611e51977a8289e2e124b220f727895181ef2eb9060e0987a4dc2db9cf0d6b \
+                           || echo 31a5467a9e907f162b093267cbbab1276b15c6e709c2ea8159566a8d165beb50)
+  tgz="build/cache/scrcpy-macos-$a-$SCRCPY.tar.gz"
+  [ -f "$tgz" ] || curl -fsSL -o "$tgz" "https://github.com/Genymobile/scrcpy/releases/download/$SCRCPY/scrcpy-macos-$a-$SCRCPY.tar.gz"
+  echo "$sum  $tgz" | shasum -a 256 -c --quiet - || { rm -f "$tgz"; echo "scrcpy download didn't match its checksum" >&2; exit 1; }
+  tar xzf "$tgz" -C build/cache
+  src="build/cache/scrcpy-macos-$a-$SCRCPY"
+  thin+=("$src/scrcpy")
+done
+lipo -create -output "$APP/Contents/Helpers/scrcpy" "${thin[@]}"
+cp "$src/adb" "$APP/Contents/Helpers/adb"  # already universal
+cp "$src/scrcpy-server" "$src/LICENSE" "$APP/Contents/Resources/scrcpy/"
+# The phone app, so the Mac can hand it to the phone over Wi-Fi (scan a QR code) or install it over adb.
+if [ -f ../android/build/macindroid.apk ]; then
+  cp ../android/build/macindroid.apk "$APP/Contents/Resources/Macindroid.apk"
+  /usr/libexec/PlistBuddy -c "Add :MIPhoneVersionCode integer $(cat ../android/build/version-code)" "$APP/Contents/Info.plist"
+else
+  echo "note: no android/build/macindroid.apk; build the phone app first to bundle it" >&2
+fi
+for tool in "$APP"/Contents/Helpers/*; do codesign --force --sign - "$tool"; done
 codesign --force --deep --sign - "$APP"
 echo "Built $(pwd)/$APP"

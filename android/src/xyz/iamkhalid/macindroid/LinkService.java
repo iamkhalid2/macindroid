@@ -478,7 +478,8 @@ public class LinkService extends Service {
                 main.post(() -> openLink(url));
                 break;
             case Proto.RING:
-                main.post(ringer::start);
+                if (Config.on(this, Config.RING)) main.post(ringer::start);
+                else send(Proto.RING_STOP, new byte[0]); // switched off on the phone: tell the Mac it isn't ringing
                 break;
             case Proto.RING_STOP:
                 main.post(() -> ringer.stop(false));
@@ -539,10 +540,12 @@ public class LinkService extends Service {
         wake();
     }
 
-    private void sendStatus() {
+    void sendStatus() {
         if (state != CONNECTED) return;
         try {
-            JSONObject o = new JSONObject().put("battery", battery).put("charging", charging).put("name", deviceName(this));
+            long version = getPackageManager().getPackageInfo(getPackageName(), 0).getLongVersionCode();
+            JSONObject o = new JSONObject().put("battery", battery).put("charging", charging).put("name", deviceName(this))
+                    .put("version", version).put("power", PowerSetup.done(this));
             sendAsync(Proto.STATUS, Proto.utf8(o.toString()));
         } catch (Exception ignored) {
         }
@@ -551,6 +554,7 @@ public class LinkService extends Service {
     // ------------------------------------------------------------------ clipboard, Mac -> phone
 
     private void applyClip(byte kind, byte[] payload) {
+        if (!Config.on(this, Config.CLIPBOARD)) return;
         String digest = Proto.digest(kind, payload);
         if (digest.equals(lastDigest)) return;
         lastDigest = digest;
@@ -579,6 +583,7 @@ public class LinkService extends Service {
 
     /** Call only while this app has focus (overlay probe, activity), otherwise Android returns null. */
     void sendClip(ClipData clip, boolean feedback) {
+        if (!feedback && !Config.on(this, Config.CLIPBOARD)) return; // only automatic copies; Send clipboard still works
         if (clip == null || clip.getItemCount() == 0) {
             if (feedback) toast("Clipboard is empty");
             return;
@@ -667,7 +672,8 @@ public class LinkService extends Service {
         while (running) {
             if (checkSelfPermission(Manifest.permission.READ_LOGS) != PackageManager.PERMISSION_GRANTED) {
                 autoSend = false;
-                pause(30000);
+                pause(5000); // the Mac's power-features setup can grant it at any moment
+                if (checkSelfPermission(Manifest.permission.READ_LOGS) == PackageManager.PERMISSION_GRANTED) sendStatus();
                 continue;
             }
             try {
@@ -775,7 +781,7 @@ public class LinkService extends Service {
         if (!scheme.equals("http") && !scheme.equals("https")) return;
         record(new Event(false, EV_LINK, 0, text.trim(), uri, null));
         Intent view = new Intent(Intent.ACTION_VIEW, uri).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-        if (phoneInUse() && Settings.canDrawOverlays(this)) {
+        if (Config.on(this, Config.LINKS) && phoneInUse() && Settings.canDrawOverlays(this)) {
             main.post(() -> Foreground.run(this, () -> {
                 try {
                     startActivity(view);
@@ -803,10 +809,11 @@ public class LinkService extends Service {
 
     /**
      * The Mac mirrors the screen with scrcpy over adb. When it isn't plugged in, switch on Wireless debugging just
-     * for the session (needs WRITE_SECURE_SETTINGS, granted once over USB by setup-phone.sh) and off again after.
+     * for the session (needs WRITE_SECURE_SETTINGS, granted once by the Mac's power-features setup or setup-phone.sh) and off again after.
      */
     private void prepareMirror() {
-        boolean can = checkSelfPermission(Manifest.permission.WRITE_SECURE_SETTINGS) == PackageManager.PERMISSION_GRANTED;
+        boolean can = Config.on(this, Config.MIRROR)
+                && checkSelfPermission(Manifest.permission.WRITE_SECURE_SETTINGS) == PackageManager.PERMISSION_GRANTED;
         boolean on = Settings.Global.getInt(getContentResolver(), "adb_wifi_enabled", 0) == 1;
         if (!on && can) {
             try {
@@ -817,7 +824,7 @@ public class LinkService extends Service {
             }
         }
         try {
-            sendAsync(Proto.MIRROR_READY, Proto.utf8(new JSONObject().put("ok", on).put("ip", wifiAddress()).toString()));
+            sendAsync(Proto.MIRROR_READY, Proto.utf8(new JSONObject().put("ok", on && Config.on(this, Config.MIRROR)).put("ip", wifiAddress()).toString()));
         } catch (Exception ignored) {
         }
     }

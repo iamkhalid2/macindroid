@@ -1,7 +1,8 @@
 import AppKit
 
-/// The only window Macindroid has. While it is open the Mac accepts pairing requests; the user compares the
-/// 6-digit code with the phone's and clicks Pair.
+/// The first-run window. It shows a QR code that downloads the phone app onto the phone (see PhoneAppLink);
+/// while it is open the Mac accepts pairing requests, and the user compares the 6-digit code with the phone's and
+/// clicks Pair.
 final class PairingPanel: NSObject, NSWindowDelegate {
     private var panel: NSPanel?
     private let heading = NSTextField(labelWithString: "")
@@ -11,10 +12,13 @@ final class PairingPanel: NSObject, NSWindowDelegate {
     private let pairButton = NSButton(title: "Pair", target: nil, action: nil)
     private let cancelButton = NSButton(title: "Cancel", target: nil, action: nil)
     private var peer: Peer?
+    private let qrBox = NSStackView()
+    private let urlLabel = NSTextField(labelWithString: "")
 
     func show() {
         link.pairingMode = true
         if panel == nil { build() }
+        if qrBox.arrangedSubviews.isEmpty { fillQR() }
         showWaiting()
         NSApp.activate(ignoringOtherApps: true)
         panel?.center()
@@ -29,6 +33,7 @@ final class PairingPanel: NSObject, NSWindowDelegate {
         message.stringValue = "Check that your phone shows the same code."
         code.stringValue = String(digits.prefix(3)) + " " + String(digits.suffix(3))
         code.isHidden = false
+        qrBox.isHidden = true
         spinner.stopAnimation(nil)
         spinner.isHidden = true
         pairButton.isHidden = false
@@ -39,8 +44,10 @@ final class PairingPanel: NSObject, NSWindowDelegate {
 
     private func showWaiting() {
         peer = nil
-        heading.stringValue = "Pair Your Phone"
-        message.stringValue = "On your Android phone, open Macindroid and choose “\(macName)”. Keep both on the same Wi-Fi."
+        heading.stringValue = "Set Up Your Phone"
+        message.stringValue = "No Macindroid on your Android phone yet? Scan this with its camera, open the download and "
+            + "tap Install. Then open Macindroid on the phone and choose “\(macName)”. Keep both on the same Wi-Fi."
+        qrBox.isHidden = false
         code.isHidden = true
         spinner.isHidden = false
         spinner.startAnimation(nil)
@@ -66,6 +73,13 @@ final class PairingPanel: NSObject, NSWindowDelegate {
         peer = nil
         link.pairingMode = false
         spinner.stopAnimation(nil)
+    }
+
+    /// The QR code that downloads the phone app.
+    private func fillQR() {
+        qrBox.addArrangedSubview(QRCode.view(PhoneAppLink.url.absoluteString, points: 160))
+        urlLabel.stringValue = "Macindroid \(PhoneAppLink.version) for Android, from GitHub"
+        qrBox.addArrangedSubview(urlLabel)
     }
 
     private func build() {
@@ -100,7 +114,13 @@ final class PairingPanel: NSObject, NSWindowDelegate {
         let buttons = NSStackView(views: [cancelButton, pairButton])
         buttons.spacing = 10
 
-        let stack = NSStackView(views: [icon, heading, message, code, spinner, buttons])
+        qrBox.orientation = .vertical
+        qrBox.alignment = .centerX
+        qrBox.spacing = 8
+        urlLabel.font = .systemFont(ofSize: 11)
+        urlLabel.textColor = .tertiaryLabelColor
+        urlLabel.isSelectable = true
+        let stack = NSStackView(views: [icon, heading, message, qrBox, code, spinner, buttons])
         stack.orientation = .vertical
         stack.alignment = .centerX
         stack.spacing = 12

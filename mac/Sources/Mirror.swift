@@ -1,15 +1,11 @@
 import AppKit
 
-/// Phone mirroring through scrcpy (Homebrew), the open-source Android screen mirror. Over USB it starts at once;
+/// Phone mirroring through scrcpy (bundled), the open-source Android screen mirror. Over USB it starts at once;
 /// otherwise the phone switches on Wireless debugging just for the session and switches it off afterwards.
 final class Mirror {
     private var process: Process?
     private var phoneCanPrepare = true
-    private let searchPaths = ["/opt/homebrew/bin", "/usr/local/bin", "/usr/bin"]
-
-    private func tool(_ name: String) -> String? {
-        searchPaths.map { "\($0)/\(name)" }.first { FileManager.default.isExecutableFile(atPath: $0) }
-    }
+    private func tool(_ name: String) -> String? { Tools.path(name) }
 
     var available: Bool { tool("scrcpy") != nil && tool("adb") != nil }
     var running: Bool { process?.isRunning == true }
@@ -20,7 +16,7 @@ final class Mirror {
             return
         }
         guard let adb = tool("adb"), let scrcpy = tool("scrcpy") else {
-            if !quietly { alert("Mirroring needs scrcpy", "Install it once in Terminal with:  brew install scrcpy") }
+            if !quietly { alert("Mirroring isn't included in this build", "Download Macindroid again from its GitHub page.") }
             return
         }
         phoneCanPrepare = true
@@ -47,7 +43,7 @@ final class Mirror {
                                "Make sure both are on the same Wi-Fi, or plug the phone in with USB debugging on, then try again.")
                 } else {
                     self.alert("Turn on Wireless debugging",
-                               "On the phone: Settings → Developer options → Wireless debugging. Or run setup-phone.sh once with the phone plugged in, so Macindroid can switch it on for you.")
+                               "On the phone: Settings → Developer options → Wireless debugging. Or choose Settings → Set Up Power Features… once, so Macindroid can switch it on for you.")
                 }
             }
         }
@@ -63,9 +59,8 @@ final class Mirror {
         // Like iPhone Mirroring: the phone's own screen stays dark while you use it from the Mac.
         p.arguments = ["--serial", serial, "--window-title", link.phoneName, "--stay-awake", "--turn-screen-off",
                        "--power-off-on-close", "--keyboard=uhid"]
-        var env = ProcessInfo.processInfo.environment
+        var env = Tools.environment
         env["ADB"] = adb
-        env["PATH"] = searchPaths.joined(separator: ":") + ":" + (env["PATH"] ?? "")
         p.environment = env
         let errors = Pipe()
         p.standardError = errors
@@ -92,14 +87,7 @@ final class Mirror {
         }
     }
 
-    private func findDevice(_ adb: String) -> String? {
-        let lines = run(adb, ["devices"]).split(separator: "\n").dropFirst()
-        let ready = lines.compactMap { line -> String? in
-            let parts = line.split(separator: "\t")
-            return parts.count == 2 && parts[1] == "device" ? String(parts[0]) : nil
-        }
-        return ready.first(where: { !$0.contains(":") && !$0.contains("._tcp") }) ?? ready.first // prefer USB
-    }
+    private func findDevice(_ adb: String) -> String? { Tools.readyDevices().first } // USB first
 
     /// Wireless debugging advertises `_adb-tls-connect._tcp`; a Mac this phone has trusted over USB can connect.
     private func connectAdvertised(_ adb: String) {
@@ -110,18 +98,7 @@ final class Mirror {
         }
     }
 
-    private func run(_ path: String, _ args: [String]) -> String {
-        let p = Process()
-        p.executableURL = URL(fileURLWithPath: path)
-        p.arguments = args
-        let out = Pipe()
-        p.standardOutput = out
-        p.standardError = out
-        guard (try? p.run()) != nil else { return "" }
-        let data = out.fileHandleForReading.readDataToEndOfFile()
-        p.waitUntilExit()
-        return String(decoding: data, as: UTF8.self)
-    }
+    private func run(_ path: String, _ args: [String]) -> String { Tools.run(path, args, timeout: 20).output }
 
     private func alert(_ title: String, _ message: String) {
         NSApp.activate(ignoringOtherApps: true)

@@ -79,7 +79,7 @@ final class PhotoWatcher {
     }
 
     private void scan() {
-        if (!LinkService.connected() || !allowed(service)) return;
+        if (!LinkService.connected() || !allowed(service) || !Config.on(service, Config.PHOTOS)) return;
         long since = Math.max(startedAt, System.currentTimeMillis() / 1000 - RECENT_SECONDS);
         String[] columns = {
                 MediaStore.Images.Media._ID, MediaStore.Images.Media.RELATIVE_PATH, MediaStore.Images.Media.DISPLAY_NAME,

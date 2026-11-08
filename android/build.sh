@@ -7,10 +7,12 @@ BT="$SDK/build-tools/$(ls "$SDK/build-tools" | sort -V | tail -1)"
 JAR="$SDK/platforms/$(ls "$SDK/platforms" | sort -V | tail -1)/android.jar"
 B=build
 rm -rf "$B" && mkdir -p "$B/gen" "$B/classes" "$B/dex"
+VC="$(date +%s)"
+echo "$VC" > "$B/version-code"  # the Mac app bundles this APK and compares versions with the installed one
 
 "$BT/aapt2" compile --dir res -o "$B/res.zip"
 "$BT/aapt2" link -o "$B/base.apk" -I "$JAR" --manifest AndroidManifest.xml -R "$B/res.zip" --java "$B/gen" \
-  --min-sdk-version 34 --target-sdk-version 34 --version-code "$(date +%s)" --version-name "$(cat ../VERSION)" --auto-add-overlay
+  --min-sdk-version 34 --target-sdk-version 34 --version-code "$VC" --version-name "$(cat ../VERSION)" --auto-add-overlay
 javac -Xlint:-options --release 17 -classpath "$JAR" -d "$B/classes" $(find "$B/gen" src -name '*.java')
 "$BT/d8" --release --lib "$JAR" --min-api 34 --output "$B/dex" $(find "$B/classes" -name '*.class')
 cp "$B/base.apk" "$B/unsigned.apk"

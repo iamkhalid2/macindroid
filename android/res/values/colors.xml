@@ -1,15 +1,18 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Material You roles taken from the phone's wallpaper palette (light). values-night has the dark set. -->
+<!-- Macindroid's own palette, taken from the app icon: graphite tile, the Mac half's off-white, the Android half's
+     green. One dark set for every system theme, like the icon. -->
 <resources>
-    <color name="bg">@android:color/system_neutral1_50</color>
-    <color name="card">@android:color/system_neutral1_10</color>
-    <color name="on">@android:color/system_neutral1_900</color>
-    <color name="onVar">@android:color/system_neutral2_700</color>
-    <color name="primary">@android:color/system_accent1_600</color>
-    <color name="onPrimary">@android:color/system_accent1_0</color>
-    <color name="primaryContainer">@android:color/system_accent1_100</color>
-    <color name="onPrimaryContainer">@android:color/system_accent1_900</color>
-    <color name="good">#1B873F</color>
-    <color name="warn">#B26A00</color>
-    <color name="bad">#BA1A1A</color>
+    <color name="bg">#FF0E1014</color>
+    <color name="card">#FF181B21</color>
+    <color name="raised">#FF20242C</color>
+    <color name="line">#FF2C313B</color>
+    <color name="on">#FFF5F5F7</color>
+    <color name="onVar">#FF9298A3</color>
+    <color name="primary">#FF4ADE80</color>
+    <color name="onPrimary">#FF0B1A10</color>
+    <color name="primaryContainer">#FF1C3326</color>
+    <color name="onPrimaryContainer">#FF9FF0BE</color>
+    <color name="good">#FF4ADE80</color>
+    <color name="warn">#FFFFB547</color>
+    <color name="bad">#FFFF7A7A</color>
 </resources>

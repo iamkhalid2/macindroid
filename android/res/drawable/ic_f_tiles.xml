@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Feature glyph for the home screen, drawn like the Macindroid mark (1.75 stroke, round caps). Tinted in code. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp" android:height="24dp" android:viewportWidth="24" android:viewportHeight="24">
+    <path android:pathData="M5,4 H9.5 A1,1 0 0 1 10.5,5 V9.5 A1,1 0 0 1 9.5,10.5 H5 A1,1 0 0 1 4,9.5 V5 A1,1 0 0 1 5,4 Z" android:strokeColor="#FFFFFFFF" android:strokeWidth="1.75" android:strokeLineCap="round" android:strokeLineJoin="round" />
+    <path android:pathData="M14.5,4 H19 A1,1 0 0 1 20,5 V9.5 A1,1 0 0 1 19,10.5 H14.5 A1,1 0 0 1 13.5,9.5 V5 A1,1 0 0 1 14.5,4 Z" android:strokeColor="#FFFFFFFF" android:strokeWidth="1.75" android:strokeLineCap="round" android:strokeLineJoin="round" />
+    <path android:pathData="M5,13.5 H9.5 A1,1 0 0 1 10.5,14.5 V19 A1,1 0 0 1 9.5,20 H5 A1,1 0 0 1 4,19 V14.5 A1,1 0 0 1 5,13.5 Z" android:strokeColor="#FFFFFFFF" android:strokeWidth="1.75" android:strokeLineCap="round" android:strokeLineJoin="round" />
+    <path android:pathData="M14.5,13.5 H19 A1,1 0 0 1 20,14.5 V19 A1,1 0 0 1 19,20 H14.5 A1,1 0 0 1 13.5,19 V14.5 A1,1 0 0 1 14.5,13.5 Z" android:strokeColor="#FFFFFFFF" android:strokeWidth="1.75" android:strokeLineCap="round" android:strokeLineJoin="round" />
+</vector>

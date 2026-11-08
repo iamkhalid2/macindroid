@@ -20,7 +20,7 @@ import android.widget.Toast;
  * One-time codes for the Mac. Android 15 and later hide codes in notifications from listeners it doesn't trust.
  * It trusts a companion app: one you've linked to a device of yours in Android's own pairing dialog, as a watch
  * app is. Allow here opens that dialog and you pick your Mac. Android only checks when the listener connects, so
- * the listener is reconnected afterwards. (On phones that let adb set it, setup-phone.sh's app op does the same.)
+ * the listener is reconnected afterwards. (On phones that let adb set it, the Mac's power-features setup sets the app op, which does the same.)
  */
 final class CodeAccess {
     static final int REQUEST = 3;
