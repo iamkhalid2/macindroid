@@ -18,6 +18,7 @@ enum Kind: UInt8 {
     case notifPost = 10, notifRemove = 11, notifReply = 12, notifAction = 13, notifDismiss = 14, notifOpen = 15
     case fileOffer = 20, fileChunk = 21, fileEnd = 22, fileCancel = 23, link = 24
     case ring = 30, ringStop = 31, status = 32, mirrorPrep = 33, mirrorReady = 34, mirrorDone = 35
+    case code = 40 // a one-time code from a phone notification: JSON {code, from, app, key}
 }
 
 enum PairMessage: UInt8 { case request = 1, challenge = 2, closed = 3, declined = 4 }
@@ -78,6 +79,7 @@ enum Prefs {
     static var syncClipboard: Bool { flag("syncClipboard") }
     static var phoneNotifications: Bool { flag("phoneNotifications") }
     static var openLinks: Bool { flag("openLinks") }
+    static var copyCodes: Bool { flag("copyCodes") }
 }
 
 func framed(_ body: Data) -> Data {
@@ -232,6 +234,7 @@ final class Link {
             ringing = false
             onChange?()
         case .mirrorReady: mirror.phoneReady(parseJSON(payload) ?? [:])
+        case .code: receiveCode(payload)
         default: break
         }
     }
@@ -298,6 +301,17 @@ final class Link {
     func declinePairing(_ peer: Peer) {
         sendRaw(peer, pairMagic + Data([PairMessage.declined.rawValue]))
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { self.drop(peer) }
+    }
+
+    /// A one-time code that arrived on the phone: onto the clipboard, with a quiet notice. Never logged.
+    private func receiveCode(_ payload: Data) {
+        guard Prefs.copyCodes, let info = parseJSON(payload), let code = info["code"] as? String,
+              (4...8).contains(code.count), code.allSatisfy({ $0.isASCII && ($0.isNumber || $0.isUppercase) }) else { return }
+        let app = info["app"] as? String ?? "an app"
+        let from = (info["from"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? app
+        clipboard.copyCode(code)
+        notifications.postCode(code, from: from, key: info["key"] as? String ?? "")
+        log("\(phoneName) -> Mac: one-time code from \(app)") // never the code itself
     }
 
     private func openLink(_ text: String) {

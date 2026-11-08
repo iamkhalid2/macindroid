@@ -1,6 +1,7 @@
 package xyz.iamkhalid.macindroid;
 
 import android.app.ActivityOptions;
+import android.app.AppOpsManager;
 import android.app.KeyguardManager;
 import android.app.Notification;
 import android.app.NotificationManager;
@@ -18,6 +19,7 @@ import android.graphics.Canvas;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.Icon;
 import android.os.Bundle;
+import android.os.Parcelable;
 import android.os.SystemClock;
 import android.service.notification.NotificationListenerService;
 import android.service.notification.StatusBarNotification;
@@ -47,6 +49,15 @@ public class NotifListener extends NotificationListenerService {
     @Override
     public void onListenerConnected() {
         instance = this;
+        // Android 15+ hides one-time codes from listeners unless setup-phone.sh allowed this app op. Android reads
+        // it when the listener connects, so this line says whether codes can reach the Mac in this session.
+        try {
+            int mode = getSystemService(AppOpsManager.class).unsafeCheckOpNoThrow(
+                    "android:receive_sensitive_notifications", android.os.Process.myUid(), getPackageName());
+            Log.i("Macindroid", mode == AppOpsManager.MODE_ALLOWED ? "one-time codes: visible"
+                    : "one-time codes: hidden by Android; run setup-phone.sh to copy them to the Mac");
+        } catch (RuntimeException ignored) { // an Android without the op
+        }
     }
 
     @Override
@@ -58,7 +69,10 @@ public class NotifListener extends NotificationListenerService {
     @Override
     public void onNotificationPosted(StatusBarNotification sbn, RankingMap rankings) {
         LinkService service = LinkService.instance;
-        if (service == null || !LinkService.connected() || !Config.mirrorNotifications(this)) return;
+        if (service == null || !LinkService.connected()) return;
+        // Codes go even while the phone is in use: you are often signing in on the Mac with the phone in your hand.
+        sendCode(service, sbn);
+        if (!Config.mirrorNotifications(this)) return;
         if (service.phoneInUse()) return;
         if (!worthForwarding(sbn, rankings)) {
             Log.d("Macindroid", "not forwarding a notification from " + sbn.getPackageName());
@@ -146,6 +160,76 @@ public class NotifListener extends NotificationListenerService {
             service.sendAsync(Proto.NOTIF_POST, Proto.concat(length, json, icon == null ? new byte[0] : icon));
             Log.i("Macindroid", "forwarded a notification from " + pkg); // package only, never content
         } catch (Exception ignored) {
+        }
+    }
+
+    // ------------------------------------------------------------------ one-time codes
+
+    private static final long CODE_FRESH_MS = 10 * 60_000;
+    private final Map<String, Long> codesSent = new HashMap<>(); // code -> elapsedRealtime; main thread
+
+    /**
+     * Sends a one-time code in a new notification to the Mac, which puts it on the clipboard. Sent before the
+     * notification itself, so the Mac shows one "Code copied" notice instead of two. The code is never logged.
+     */
+    private void sendCode(LinkService service, StatusBarNotification sbn) {
+        String pkg = sbn.getPackageName();
+        if (pkg.equals(getPackageName())) return;
+        Notification n = sbn.getNotification();
+        int skip = Notification.FLAG_GROUP_SUMMARY | Notification.FLAG_ONGOING_EVENT | Notification.FLAG_FOREGROUND_SERVICE
+                | Notification.FLAG_LOCAL_ONLY;
+        if ((n.flags & skip) != 0) return;
+        Bundle ex = n.extras;
+        String title = text(ex.getCharSequence(Notification.EXTRA_TITLE));
+        String body;
+        long at;
+        Notification.MessagingStyle.Message last = lastMessage(ex);
+        if (last != null) { // a conversation: only its newest message, so an earlier code isn't sent again
+            body = text(last.getText());
+            at = last.getTimestamp();
+            CharSequence conversation = ex.getCharSequence(Notification.EXTRA_CONVERSATION_TITLE);
+            if (conversation != null && conversation.length() > 0) title = conversation.toString();
+            else if (last.getSenderPerson() != null && last.getSenderPerson().getName() != null) title = last.getSenderPerson().getName().toString();
+        } else {
+            body = text(ex.getCharSequence(Notification.EXTRA_BIG_TEXT));
+            if (body.isEmpty()) body = text(ex.getCharSequence(Notification.EXTRA_TEXT));
+            at = n.when > 0 ? n.when : sbn.getPostTime();
+        }
+        if (Math.abs(System.currentTimeMillis() - at) > CODE_FRESH_MS) return; // an old message, updated or reposted
+        String code = Otp.find(title + "\n" + body);
+        if (code == null) return;
+
+        long now = SystemClock.elapsedRealtime();
+        codesSent.values().removeIf(sent -> now - sent > CODE_FRESH_MS);
+        if (codesSent.containsKey(code)) return; // the same SMS shown by two apps, or a notification update
+        codesSent.put(code, now);
+
+        String app = appLabel(pkg);
+        // From whom: the sender for a text message or chat (the SMS "Google", "AX-HDFCBK"), otherwise the app.
+        boolean conversation = last != null || Notification.CATEGORY_MESSAGE.equals(n.category)
+                || pkg.equals(android.provider.Telephony.Sms.getDefaultSmsPackage(this));
+        String from = conversation && !title.isEmpty() ? title : app;
+        try {
+            JSONObject o = new JSONObject().put("code", code).put("from", from).put("app", app).put("key", sbn.getKey());
+            service.sendAsync(Proto.CODE, Proto.utf8(o.toString()));
+            Log.i("Macindroid", "sent a one-time code from " + pkg); // package only, never the code
+        } catch (Exception ignored) {
+        }
+    }
+
+    private static Notification.MessagingStyle.Message lastMessage(Bundle ex) {
+        Parcelable[] bundles = ex.getParcelableArray(Notification.EXTRA_MESSAGES, Parcelable.class);
+        if (bundles == null || bundles.length == 0) return null;
+        List<Notification.MessagingStyle.Message> messages = Notification.MessagingStyle.Message.getMessagesFromBundleArray(bundles);
+        return messages.isEmpty() ? null : messages.get(messages.size() - 1);
+    }
+
+    private String appLabel(String pkg) {
+        PackageManager pm = getPackageManager();
+        try {
+            return String.valueOf(pm.getApplicationLabel(pm.getApplicationInfo(pkg, 0)));
+        } catch (PackageManager.NameNotFoundException e) {
+            return pkg;
         }
     }
 

@@ -8,6 +8,8 @@ final class PhoneNotifications: NSObject, UNUserNotificationCenterDelegate {
     private var categories: [String: UNNotificationCategory] = [:]
     private let iconDir = FileManager.default.temporaryDirectory.appendingPathComponent("macindroid-icons", isDirectory: true)
     private var appIcons: [String: Data] = [:] // the phone sends each app's icon once per connection
+    private var codeKeys: [String: Date] = [:] // phone notifications already shown as "Code … copied"
+    private var codes: [String: String] = [:] // notification id -> code, so a click copies it again; kept 2 minutes
 
     func setup() {
         center.delegate = self
@@ -28,6 +30,7 @@ final class PhoneNotifications: NSObject, UNUserNotificationCenterDelegate {
         let length = payload.prefix(4).reduce(0) { ($0 << 8) | Int($1) }
         guard payload.count >= 4 + length, let info = parseJSON(Data(payload.dropFirst(4).prefix(length))),
               let key = info["key"] as? String else { return }
+        if let shown = codeKeys[key], Date().timeIntervalSince(shown) < ClipboardSync.codeLifetime { return } // the code notice covers it
         let pkg = info["pkg"] as? String ?? ""
         let app = info["app"] as? String ?? "Phone"
         let title = info["title"] as? String ?? ""
@@ -57,6 +60,27 @@ final class PhoneNotifications: NSObject, UNUserNotificationCenterDelegate {
         }
         center.add(UNNotificationRequest(identifier: "phone:" + key, content: content, trigger: nil)) { error in
             log("phone notification from \(pkg)" + (error.map { ": not shown (\($0.localizedDescription))" } ?? ""))
+        }
+    }
+
+    /// "Code 123456 from Google copied": a banner without sound, gone when the code leaves the clipboard. Clicking it
+    /// copies the code again.
+    func postCode(_ code: String, from: String, key: String) {
+        let id = "code:" + (key.isEmpty ? UUID().uuidString : key)
+        codeKeys = codeKeys.filter { Date().timeIntervalSince($0.value) < ClipboardSync.codeLifetime }
+        if !key.isEmpty { codeKeys[key] = Date() }
+        codes[id] = code
+        let content = UNMutableNotificationContent()
+        content.title = "Code \(code) from \(from) copied"
+        content.body = "Paste it within 2 minutes. Click to copy it again."
+        content.threadIdentifier = "codes"
+        content.userInfo = ["kind": "code"] // the code stays in memory, not in Notification Centre's records
+        center.removeDeliveredNotifications(withIdentifiers: [id])
+        center.add(UNNotificationRequest(identifier: id, content: content, trigger: nil))
+        DispatchQueue.main.asyncAfter(wallDeadline: .now() + ClipboardSync.codeLifetime) { [weak self] in
+            guard let self, self.codes[id] == code else { return } // replaced by a newer code
+            self.codes[id] = nil
+            self.center.removeDeliveredNotifications(withIdentifiers: [id])
         }
     }
 
@@ -123,6 +147,10 @@ final class PhoneNotifications: NSObject, UNUserNotificationCenterDelegate {
                     if action.hasPrefix("action."), let index = Int(action.dropFirst(7)) {
                         link.sendToPhone(.notifAction, json(["key": key, "index": index]))
                     }
+                }
+            case "code":
+                if action == UNNotificationDefaultActionIdentifier, let code = self.codes[response.notification.request.identifier] {
+                    clipboard.copyCode(code)
                 }
             case "file":
                 if action == UNNotificationDefaultActionIdentifier, let path = info["path"] as? String {

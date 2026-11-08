@@ -189,7 +189,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let settings = NSMenuItem(title: "Settings", action: nil, keyEquivalent: "")
         let sub = NSMenu()
         sub.autoenablesItems = false
-        for (title, key) in [("Sync Clipboard", "syncClipboard"), ("Show Phone Notifications", "phoneNotifications"),
+        for (title, key) in [("Sync Clipboard", "syncClipboard"), ("Copy Codes from Phone", "copyCodes"),
+                             ("Show Phone Notifications", "phoneNotifications"),
                              ("Open Links from Phone Automatically", "openLinks")] {
             let toggle = item(title, #selector(togglePref(_:)))
             toggle.representedObject = key

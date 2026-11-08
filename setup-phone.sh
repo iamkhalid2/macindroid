@@ -24,7 +24,11 @@ echo "Waiting for the phone (USB debugging on, cable connected, 'Allow' tapped o
 "$ADB" wait-for-device
 # -g grants READ_LOGS and WRITE_SECURE_SETTINGS at install time; vendor ROMs (ColorOS, MIUI) often refuse the
 # separate pm grant calls below, so they are only a fallback.
+# Android 15+ hides one-time codes from notification listeners. This app op exempts Macindroid so it can copy codes
+# to the Mac. Android checks it when the listener binds, so set it before an update (rebinds) and again after.
+"$ADB" shell appops set "$PKG" RECEIVE_SENSITIVE_NOTIFICATIONS allow >/dev/null 2>&1 || true
 "$ADB" install -r -g "$APK"
+"$ADB" shell appops set "$PKG" RECEIVE_SENSITIVE_NOTIFICATIONS allow >/dev/null 2>&1 || true
 "$ADB" shell pm grant "$PKG" android.permission.READ_LOGS >/dev/null 2>&1 || true
 "$ADB" shell pm grant "$PKG" android.permission.WRITE_SECURE_SETTINGS >/dev/null 2>&1 || true
 "$ADB" shell appops set "$PKG" SYSTEM_ALERT_WINDOW allow >/dev/null 2>&1 || true
