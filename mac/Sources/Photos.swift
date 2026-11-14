@@ -441,6 +441,7 @@ final class DraggableImageView: NSImageView, NSDraggingSource {
 /// app isn't the active one, and a menu-bar app never is, so these draw themselves the same either way.
 final class CardButton: NSButton {
     private let primary: Bool
+    var tint: NSColor? // instead of the accent colour (Answer is green, Decline red)
     private var hovering = false { didSet { needsDisplay = true } }
 
     init(primary: Bool) {
@@ -460,7 +461,7 @@ final class CardButton: NSButton {
     override var isHighlighted: Bool { didSet { needsDisplay = true } }
 
     override func draw(_ dirtyRect: NSRect) {
-        var fill: NSColor = primary ? .controlAccentColor : NSColor.labelColor.withAlphaComponent(hovering ? 0.16 : 0.1)
+        var fill: NSColor = primary ? tint ?? .controlAccentColor : NSColor.labelColor.withAlphaComponent(hovering ? 0.16 : 0.1)
         if primary, hovering { fill = fill.blended(withFraction: 0.12, of: .white) ?? fill }
         if isHighlighted { fill = fill.blended(withFraction: 0.2, of: .black) ?? fill }
         if !isEnabled { fill = fill.withAlphaComponent(fill.alphaComponent * 0.6) }

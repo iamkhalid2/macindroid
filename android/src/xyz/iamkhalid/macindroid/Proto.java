@@ -28,6 +28,18 @@ final class Proto {
     static final byte CODE = 40;
     static final byte POWER_SETUP = 41; // phone -> Mac: show the power-features setup window
     static final byte UPDATE_OFFER = 42, UPDATE_GET = 43, UPDATE_APK = 44; // see Updater
+    /** Phone -> Mac after each reconnect: JSON array of the notification keys still here, so the Mac drops the rest. */
+    static final byte NOTIF_SYNC = 16;
+    /** Mac -> phone: the Mac is going to sleep, so don't keep trying it (see LinkService.macAsleep). */
+    static final byte MAC_SLEEP = 45;
+    /** Mac -> phone, as a UDP datagram to PORT: the Mac is awake again, reconnect now. */
+    static final byte KNOCK = 46;
+    /** Phone -> Mac: a call is ringing, or stopped (see Calls). Mac -> phone: answer or decline it. */
+    static final byte CALL = 47, CALL_ACTION = 48;
+    /** Mac -> phone: dial this number. Phone -> Mac: how that went. */
+    static final byte DIAL = 49;
+    /** Mac -> phone and back: this phone's files, for Finder (see PhoneFiles). */
+    static final byte FS_REQUEST = 50, FS_REPLY = 51;
 
     static final int PORT = 47800;
     static final String SERVICE_TYPE = "_macindroid._tcp";

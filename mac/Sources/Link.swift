@@ -16,6 +16,7 @@ let macName = Host.current().localizedName ?? "Mac"
 enum Kind: UInt8 {
     case text = 1, image = 2, hello = 3, ping = 4, pong = 5
     case notifPost = 10, notifRemove = 11, notifReply = 12, notifAction = 13, notifDismiss = 14, notifOpen = 15
+    case notifSync = 16 // phone -> Mac after each reconnect: JSON array of the notification keys still on the phone
     case fileOffer = 20, fileChunk = 21, fileEnd = 22, fileCancel = 23, link = 24
     case ring = 30, ringStop = 31, status = 32, mirrorPrep = 33, mirrorReady = 34, mirrorDone = 35
     case photo = 36, photoGet = 37, photoFull = 38
@@ -24,6 +25,13 @@ enum Kind: UInt8 {
     case updateOffer = 42 // Mac -> phone: JSON {version, code, size, show}: this Mac has a newer phone app
     case updateGet = 43   // phone -> Mac: send it
     case updateApk = 44   // Mac -> phone: the APK
+    case sleep = 45       // Mac -> phone: this Mac is going to sleep; don't keep trying it
+    case knock = 46       // Mac -> phone, as a UDP datagram to the same port: awake again, reconnect now
+    case call = 47        // phone -> Mac: a call is ringing or has stopped (see Calls)
+    case callAction = 48  // Mac -> phone: JSON {id, action: answer | decline}
+    case dial = 49        // Mac -> phone: a number to call; phone -> Mac: JSON {how} it went
+    case fsRequest = 50   // Mac -> phone: a file operation for Finder (see PhoneFiles)
+    case fsReply = 51     // phone -> Mac: its answer
 }
 
 enum PairMessage: UInt8 { case request = 1, challenge = 2, closed = 3, declined = 4 }
@@ -87,6 +95,10 @@ enum Prefs {
     static var copyCodes: Bool { flag("copyCodes") }
     static var photoPreviews: Bool { flag("photoPreviews") }
     static var checkUpdates: Bool { flag("checkUpdates") }
+    /// test_client.py sets `debugUntil` to a time a few minutes ahead. Until then only it may connect (so the real
+    /// phone doesn't take the link back mid-test) and macindroid://debug-… links act out sleep, wake and a cleared
+    /// notification. It runs out by itself, so a test that died can't leave the phone locked out.
+    static var debug: Bool { Date().timeIntervalSince1970 < UserDefaults.standard.double(forKey: "debugUntil") }
 }
 
 func framed(_ body: Data) -> Data {
@@ -122,6 +134,12 @@ final class Peer {
     var name = "Phone"
     var authenticated = false
     var pendingKey: SymmetricKey?
+    var lastHeard = Date()
+    var probing = false
+    var isLocalTest: Bool { // test_client.py, which connects from this Mac
+        if case let .hostPort(host, _) = connection.endpoint { return "\(host)".hasPrefix("127.") || "\(host)".hasPrefix("::1") }
+        return false
+    }
     init(_ connection: NWConnection) { self.connection = connection }
 }
 
@@ -135,20 +153,103 @@ final class Link {
     var onPowerSetupRequest: (() -> Void)?
     private(set) var status: PhoneStatus?
     var ringing = false
+    private(set) var asleep = false
 
     var phone: Peer? { peers.values.first { $0.authenticated } }
     var connected: Bool { phone != nil }
     var phoneName: String { Store.phoneName ?? "Phone" }
 
-    func start() throws {
+    /// Listens for the phone. Called at launch and after every wake; if the port can't be had or the listener
+    /// fails (the network changed under it), it tries again by itself.
+    func start() {
+        guard listener == nil, !asleep else { return }
         let parameters = NWParameters.tcp
         parameters.allowLocalEndpointReuse = true
-        let listener = try NWListener(using: parameters, on: listenPort)
+        guard let listener = try? NWListener(using: parameters, on: listenPort) else {
+            log("could not listen on port \(listenPort); trying again in a moment")
+            DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in self?.start() }
+            return
+        }
         listener.service = NWListener.Service(name: macName, type: serviceType)
-        listener.stateUpdateHandler = { state in log("listener: \(state)") }
+        listener.stateUpdateHandler = { [weak self, weak listener] state in
+            log("listener: \(state)")
+            guard let self, let listener, self.listener === listener else { return }
+            switch state {
+            case .ready: self.knock()
+            case .failed:
+                listener.cancel()
+                self.listener = nil
+                DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in self?.start() }
+            default: break
+            }
+        }
         listener.newConnectionHandler = { [weak self] connection in self?.accept(connection) }
         listener.start(queue: .main)
         self.listener = listener
+    }
+
+    // MARK: sleep and wake
+
+    /// The Mac is about to sleep. A sleeping Mac still wakes for a connection to a port it advertises, so a phone
+    /// that kept trying would wake it every few minutes all night. Instead: tell the phone, close the link and stop
+    /// listening, so nothing is left for the phone to reach. `done` runs once that's on its way (within a second).
+    func sleep(then done: @escaping () -> Void = {}) {
+        guard !asleep else { done(); return }
+        asleep = true
+        log("going to sleep: closing the link")
+        listener?.cancel()
+        listener = nil
+        var finished = false
+        let finish = { if !finished { finished = true; done() } }
+        for peer in peers.values {
+            guard peer.authenticated else { peer.connection.cancel(); continue }
+            send(peer, .sleep, Data()) { _ in
+                peer.connection.cancel()
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3, execute: finish) // let the close leave the Mac
+            }
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + (connected ? 1 : 0.3), execute: finish)
+    }
+
+    /// Awake with someone at it (the display is on): listen again and tell the phone.
+    func wake() {
+        guard asleep else { return }
+        asleep = false
+        log("awake: listening again")
+        start()
+    }
+
+    /// One small datagram to where the phone was last seen, saying this Mac is up, so the phone reconnects within a
+    /// second instead of at its next retry (minutes apart once the Mac has been gone a while). Sealed with the
+    /// pairing key; a phone that has moved on, or an older phone app, just never hears it.
+    private func knock() {
+        guard let key = Store.key, let host = UserDefaults.standard.string(forKey: "phoneHost"), !host.isEmpty else { return }
+        for delay in [0.5, 3.0, 8.0] { // Wi-Fi may still be joining right after a wake
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+                guard let self, !self.connected, !self.asleep, let body = seal(.knock, Data(), key: key) else { return }
+                let datagram = NWConnection(host: NWEndpoint.Host(host), port: listenPort, using: .udp)
+                datagram.start(queue: .main)
+                datagram.send(content: body, completion: .contentProcessed { _ in datagram.cancel() })
+            }
+        }
+    }
+
+    /// A phone that walked out of Wi-Fi range can vanish without closing the connection, and the Mac would go on
+    /// saying it's connected for minutes. So when the Mac has something to send, or the menu opens, and the phone
+    /// has been quiet, it asks; no answer in 10 seconds and the link is dropped. Nothing is sent while idle.
+    func probe() {
+        guard let peer = phone, !peer.probing, Date().timeIntervalSince(peer.lastHeard) > 5 else { return }
+        peer.probing = true
+        send(peer, .ping, Data()) { [weak self, weak peer] sent in
+            let asked = Date()
+            DispatchQueue.main.asyncAfter(deadline: .now() + (sent ? 10 : 0)) {
+                guard let self, let peer else { return }
+                peer.probing = false
+                guard peer.lastHeard < asked, self.peers[ObjectIdentifier(peer)] != nil else { return }
+                log("\(peer.name) stopped answering")
+                self.drop(peer)
+            }
+        }
     }
 
     private func accept(_ connection: NWConnection) {
@@ -171,6 +272,8 @@ final class Link {
             status = nil
             ringing = false
             transfers.peerLost()
+            calls.ended()
+            phoneFiles.peerLost()
         }
         onChange?()
     }
@@ -211,7 +314,12 @@ final class Link {
             drop(peer)
             return false
         }
+        peer.lastHeard = Date()
         if !peer.authenticated {
+            if Prefs.debug, !peer.isLocalTest { // test_client.py is running; the phone gets the link back afterwards
+                drop(peer)
+                return false
+            }
             peer.authenticated = true
             for other in peers.values where other !== peer && other.authenticated { drop(other) } // a reconnect replaces the old link
             onChange?()
@@ -226,6 +334,10 @@ final class Link {
         case .hello:
             peer.name = String(decoding: payload, as: UTF8.self)
             Store.phoneName = peer.name
+            if case let .hostPort(host, _) = peer.connection.endpoint {
+                let address = "\(host)".split(separator: "%")[0] // without the interface ("%en0")
+                if address != "127.0.0.1", address != "::1" { UserDefaults.standard.set(String(address), forKey: "phoneHost") }
+            }
             send(peer, .hello, Data(macName.utf8))
             log("\(peer.name) connected from \(peer.connection.endpoint)")
             onChange?()
@@ -233,6 +345,7 @@ final class Link {
         case .text, .image: clipboard.apply(kind, payload)
         case .notifPost: notifications.post(payload)
         case .notifRemove: notifications.remove(String(decoding: payload, as: UTF8.self))
+        case .notifSync: notifications.sync(payload)
         case .fileOffer, .fileChunk, .fileEnd, .fileCancel: transfers.handle(kind, payload)
         case .link: openLink(String(decoding: payload, as: UTF8.self))
         case .status:
@@ -251,6 +364,9 @@ final class Link {
         case .code: receiveCode(payload)
         case .powerSetup: onPowerSetupRequest?()
         case .updateGet: PhoneUpdate.send()
+        case .call: calls.handle(payload)
+        case .dial: calls.dialResult(payload)
+        case .fsReply: phoneFiles.reply(payload)
         case .photo: photos.offered(payload)
         case .photoFull: photos.received(payload)
         default: break
@@ -260,6 +376,7 @@ final class Link {
     func sendToPhone(_ kind: Kind, _ payload: Data = Data(), completion: ((Bool) -> Void)? = nil) {
         guard let peer = phone else { completion?(false); return }
         send(peer, kind, payload, completion: completion)
+        if kind != .fileChunk, kind != .fileEnd { probe() } // not mid-file: a ping would queue behind the chunks
     }
 
     private func send(_ peer: Peer, _ kind: Kind, _ payload: Data, completion: ((Bool) -> Void)? = nil) {
@@ -353,3 +470,5 @@ let notifications = PhoneNotifications()
 let transfers = Transfers()
 let mirror = Mirror()
 let photos = PhotoPreviews()
+let calls = Calls()
+let phoneFiles = PhoneFiles()

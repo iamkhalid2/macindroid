@@ -19,6 +19,13 @@
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <!-- Calls: answer or decline from the Mac when the dialer's notification has no buttons of its own, and dial a
+         number clicked on the Mac. Asked for on the home screen, not in setup. -->
+    <uses-permission android:name="android.permission.ANSWER_PHONE_CALLS" />
+    <uses-permission android:name="android.permission.CALL_PHONE" />
+    <uses-feature android:name="android.hardware.telephony" android:required="false" />
+    <!-- This phone in Finder: "All files access", switched on by you in Settings. -->
+    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
     <!-- Granted once over USB by setup-phone.sh (adb install -g):
          READ_LOGS lets the app notice copies made in other apps;
          WRITE_SECURE_SETTINGS lets it switch Wireless debugging on for a mirroring session and off afterwards. -->

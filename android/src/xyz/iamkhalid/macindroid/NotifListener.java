@@ -52,6 +52,8 @@ public class NotifListener extends NotificationListenerService {
         // listener connects; this line says whether codes can reach the Mac in this session.
         Log.i("Macindroid", CodeAccess.granted(this) ? "one-time codes: visible"
                 : "one-time codes: hidden by Android; allow One-time codes in Macindroid");
+        // Android can bind this after the link is already up (after a restart or an update): catch the Mac up now.
+        if (LinkService.connected()) resendActive();
     }
 
     @Override
@@ -67,6 +69,7 @@ public class NotifListener extends NotificationListenerService {
         // there; ongoing ones (a music player's progress, say) update far too often.
         if (service != null && !LinkService.connected() && worthForwarding(sbn, rankings)) service.nudge();
         if (service == null) return;
+        if (LinkService.connected() && Calls.onPosted(this, service, sbn)) return; // a call: the Mac shows it ringing
         // Codes go even while the phone is in use (you are often signing in on the Mac with the phone in your hand),
         // and are held for a moment while the link is down, since a code is what tends to wake a sleeping phone.
         sendCode(service, sbn);
@@ -81,24 +84,36 @@ public class NotifListener extends NotificationListenerService {
 
     @Override
     public void onNotificationRemoved(StatusBarNotification sbn) {
-        if (forwarded.remove(sbn.getKey()) == null) return;
         LinkService service = LinkService.instance;
+        Calls.onRemoved(service, sbn);
+        if (forwarded.remove(sbn.getKey()) == null) return;
+        // Cleared here (by you, by its app, or because the Mac asked): clear it on the Mac. If the link is down
+        // this is lost, and the list sent after the next reconnect (resendActive) clears it there instead.
         if (service != null) service.sendAsync(Proto.NOTIF_REMOVE, Proto.utf8(sbn.getKey()));
     }
 
-    /** After a reconnect, quietly bring the Mac up to date with what is still waiting on the phone. */
+    /**
+     * After a reconnect (or when notifications are switched on or off here), quietly bring the Mac up to date with
+     * what is still waiting on the phone, then list it (NOTIF_SYNC) so the Mac clears whatever was cleared here
+     * while the two were apart. With notifications switched off the list is empty, which clears them all there.
+     */
     void resendActive() {
         forwarded.clear();
         iconsSent.clear();
+        Calls.reset();
         LinkService service = LinkService.instance;
         if (service == null) return;
         sendHeldCode(service);
-        if (!Config.mirrorNotifications(this)) return;
         try {
+            boolean mirror = Config.mirrorNotifications(this);
             RankingMap rankings = getCurrentRanking();
-            for (StatusBarNotification sbn : getActiveNotifications()) if (worthForwarding(sbn, rankings)) forward(service, sbn, true);
+            for (StatusBarNotification sbn : getActiveNotifications()) {
+                if (Calls.onPosted(this, service, sbn)) continue; // one ringing right now shows on the Mac too
+                if (mirror && worthForwarding(sbn, rankings)) forward(service, sbn, true);
+            }
         } catch (RuntimeException ignored) {
         }
+        service.sendAsync(Proto.NOTIF_SYNC, Proto.utf8(new JSONArray(forwarded.keySet()).toString()));
     }
 
     private boolean worthForwarding(StatusBarNotification sbn, RankingMap rankings) {
@@ -262,7 +277,7 @@ public class NotifListener extends NotificationListenerService {
         return messages.isEmpty() ? null : messages.get(messages.size() - 1);
     }
 
-    private String appLabel(String pkg) {
+    String appLabel(String pkg) {
         PackageManager pm = getPackageManager();
         try {
             return String.valueOf(pm.getApplicationLabel(pm.getApplicationInfo(pkg, 0)));
@@ -361,7 +376,7 @@ public class NotifListener extends NotificationListenerService {
     }
 
     /** Opt in to letting this send open an app from the background (Foreground provides the visible window). */
-    private static Bundle allowLaunch() {
+    static Bundle allowLaunch() {
         return ActivityOptions.makeBasic()
                 .setPendingIntentBackgroundActivityStartMode(ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOWED)
                 .toBundle();
@@ -396,7 +411,7 @@ public class NotifListener extends NotificationListenerService {
         return s == null ? "" : s.toString().trim();
     }
 
-    private static byte[] png(Drawable d) {
+    static byte[] png(Drawable d) {
         if (d == null) return null;
         int size = 96;
         Bitmap bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888);

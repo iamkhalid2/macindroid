@@ -41,7 +41,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         updates.start()
         notifications.setup()
         clipboard.start()
-        do { try link.start() } catch { log("could not listen on port \(listenPort): \(error)") }
+        link.start()
+        sleepWatcher.start()
+        awayLock.start()
+        phoneFiles.start()
         changed()
         LoginItem.setUpOnFirstLaunch()
         if Store.key == nil { pairing.show() }
@@ -54,6 +57,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     func application(_ application: NSApplication, open urls: [URL]) {
         let files = urls.filter(\.isFileURL)
         if !files.isEmpty { transfers.send(files) }
+        for url in urls where url.scheme == "tel" { calls.dial(url) }
         for url in urls where url.scheme == "macindroid" {
             switch url.host {
             case "ring": if !link.ringing { ringPhone() }
@@ -63,6 +67,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             case "phone-app": phoneApp.show(update: false)
             case "menu": openMenu(closingAfter: URLComponents(url: url, resolvingAgainstBaseURL: false)?
                 .queryItems?.first { $0.name == "close" }?.value.flatMap(Double.init))
+            case "debug-sleep" where Prefs.debug: link.sleep()
+            case "debug-answer" where Prefs.debug: calls.act("answer")
+            case "debug-decline" where Prefs.debug: calls.act("decline")
+            case "debug-files" where Prefs.debug: phoneFiles.showInFinder(opening: false)
+            case "debug-unmount" where Prefs.debug: phoneFiles.unmount()
+            case "debug-wake" where Prefs.debug: link.wake()
+            case "debug-clear" where Prefs.debug, "debug-list" where Prefs.debug:
+                guard let value = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first?.value else { break }
+                if url.host == "debug-clear" { notifications.debugClear(value) } else { notifications.debugList(value) }
             default: log("unknown action \(url.absoluteString)")
             }
         }
@@ -89,12 +102,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             wasConnected = link.connected
             notifications.connectionChanged()
         }
+        awayLock.update()
         guard menuOpen else { return }
         if currentShape() == shape { refreshLive() } else { rebuild() }
     }
 
     func menuNeedsUpdate(_ menu: NSMenu) { rebuild() }
-    func menuWillOpen(_ menu: NSMenu) { menuOpen = true }
+    func menuWillOpen(_ menu: NSMenu) {
+        menuOpen = true
+        link.wake()  // someone is here, whatever the sleep watcher made of it
+        link.probe() // so the menu doesn't say Connected to a phone that has gone
+    }
 
     func menuDidClose(_ menu: NSMenu) {
         menuOpen = false
@@ -126,6 +144,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         } else {
             let on = link.connected
             menu.addItem(item("Send Files…", #selector(sendFiles), enabled: on, tile: "arrow.up.doc.fill"))
+            menu.addItem(item("Show Phone in Finder", #selector(showPhoneFiles), enabled: on, tile: "folder.fill"))
             let (tabTitle, tabEnabled) = browserTarget()
             let front = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
             menu.addItem(item(tabTitle, #selector(sendTab), enabled: on && tabEnabled,
@@ -218,7 +237,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let sub = NSMenu()
         sub.autoenablesItems = false
         for (title, key) in [("Sync Clipboard", "syncClipboard"), ("Copy Codes from Phone", "copyCodes"),
-                             ("Show Phone Notifications", "phoneNotifications"),
+                             ("Show Phone Notifications", "phoneNotifications"), ("Show Calls from Phone", "showCalls"),
                              ("Open Links from Phone Automatically", "openLinks"),
                              ("Show New Photos from Phone", "photoPreviews"), ("Check for Updates", "checkUpdates")] {
             let toggle = item(title, #selector(togglePref(_:)))
@@ -226,6 +245,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             toggle.state = Prefs.flag(key) ? .on : .off
             sub.addItem(toggle)
         }
+        sub.addItem(.separator())
+        let phoneLinks = item("Call Phone Numbers I Click", #selector(togglePhoneLinks))
+        phoneLinks.state = Calls.handlesPhoneLinks ? .on : .off
+        phoneLinks.toolTip = "Phone-number links on this Mac ask to call with your phone, instead of opening FaceTime"
+        sub.addItem(phoneLinks)
+        let away = item("Lock Mac When Phone Leaves", #selector(toggleAwayLock))
+        away.state = AwayLock.enabled ? .on : .off
+        away.toolTip = "Locks this Mac about a minute after your phone leaves the Wi-Fi network or is switched off"
+        sub.addItem(away)
+        sub.addItem(.separator())
         let login = item("Open at Login", #selector(toggleLogin), enabled: !LoginItem.managedByAgent)
         login.state = LoginItem.enabled ? .on : .off
         if LoginItem.managedByAgent { login.toolTip = "Started at login by the LaunchAgent that install.sh set up" }
@@ -327,6 +356,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     @objc private func toggleLogin() { LoginItem.set(!LoginItem.enabled) }
+    @objc private func showPhoneFiles() { phoneFiles.showInFinder() }
+    @objc private func togglePhoneLinks() { Calls.handlesPhoneLinks.toggle() }
+
+    @objc private func toggleAwayLock() {
+        UserDefaults.standard.set(!AwayLock.enabled, forKey: "lockWhenAway")
+        awayLock.update()
+    }
+
+    func applicationWillTerminate(_ notification: Notification) { phoneFiles.unmount(quitting: true) }
 
     @objc private func quit() { NSApp.terminate(nil) }
 }

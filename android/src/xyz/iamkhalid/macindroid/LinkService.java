@@ -46,6 +46,8 @@ import java.io.DataOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.net.DatagramPacket;
+import java.net.DatagramSocket;
 import java.net.Inet4Address;
 import java.net.InetSocketAddress;
 import java.net.Socket;
@@ -71,7 +73,7 @@ public class LinkService extends Service {
     static final String CH_STATUS = "status", CH_FILES = "files", CH_ALERTS = "alerts", CH_RING = "ring";
     static final int NOTIFICATION_ID = 1;
 
-    static final int STARTING = 0, NOT_PAIRED = 1, SEARCHING = 2, RETRYING = 3, CONNECTED = 4, KEY_MISMATCH = 5;
+    static final int STARTING = 0, NOT_PAIRED = 1, SEARCHING = 2, RETRYING = 3, CONNECTED = 4, KEY_MISMATCH = 5, ASLEEP = 6;
     static volatile LinkService instance;
     static volatile int state = STARTING;
     static volatile String peer;
@@ -150,9 +152,17 @@ public class LinkService extends Service {
     private PowerManager.WakeLock awake; // held only while trying to reach the Mac, so the phone can't sleep mid-try
     private volatile long lostAt;        // elapsedRealtime when the Mac was last lost, or a new network appeared
     private volatile long lastTry;       // elapsedRealtime of the last connection attempt
+    /**
+     * The Mac said it was going to sleep before it closed the link. A sleeping Mac wakes for a connection to its
+     * port, so hammering it would wake it all night: go straight to the slow retries, and wait for its knock.
+     */
+    private volatile boolean macAsleep;
+    private volatile boolean knocked; // the Mac just said it's up: go straight to its address, no search first
+    private volatile DatagramSocket knocks;
     private volatile int battery = -1;
     private volatile boolean charging;
     Transfers transfers;
+    PhoneFiles files;
     Ringer ringer;
     PhotoWatcher photos;
 
@@ -200,6 +210,7 @@ public class LinkService extends Service {
         createChannels();
         startForeground(NOTIFICATION_ID, buildNotification(), ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE);
         transfers = new Transfers(this);
+        files = new PhoneFiles(this);
         ringer = new Ringer(this);
         photos = new PhotoWatcher(this); // before the network thread, which hands it PHOTO_GET
         // Registering a listener makes Android log a "denied" line for this app on every copy; the log watcher uses it.
@@ -227,6 +238,7 @@ public class LinkService extends Service {
         running = true;
         new Thread(this::networkLoop, "macindroid-net").start();
         new Thread(this::logLoop, "macindroid-log").start();
+        new Thread(this::knockLoop, "macindroid-knock").start();
         pinger = Executors.newSingleThreadScheduledExecutor();
         pinger.scheduleWithFixedDelay(this::ping, 25, 25, TimeUnit.SECONDS);
         networkCallback = new ConnectivityManager.NetworkCallback() {
@@ -305,10 +317,13 @@ public class LinkService extends Service {
         pinger.shutdownNow();
         Process p = logcat;
         if (p != null) p.destroy();
+        DatagramSocket k = knocks;
+        if (k != null) k.close();
         closeSocket();
         wake();
         io.shutdown();
         transfers.shutdown();
+        files.shutdown();
         super.onDestroy();
     }
 
@@ -328,6 +343,10 @@ public class LinkService extends Service {
                 awake.acquire(ATTEMPT_MS);
                 lostAt = SystemClock.elapsedRealtime();
                 continue;
+            }
+            if (knocked) {
+                knocked = false;
+                useDiscovery = false;
             }
             InetSocketAddress target = useDiscovery ? Discovery.findOne(this, Config.macName(this), 4000) : null;
             if (target != null) Config.setHost(this, target.getAddress().getHostAddress());
@@ -353,6 +372,7 @@ public class LinkService extends Service {
                 }
                 send(Proto.HELLO, Proto.utf8(deviceName(this)));
                 peer = target.getAddress().getHostAddress();
+                macAsleep = false;
                 state = CONNECTED;
                 linked = true;
                 setStatus("Connected to " + Config.macName(this));
@@ -374,8 +394,8 @@ public class LinkService extends Service {
                 setStatus("Pairing key doesn't match the Mac");
             } catch (Exception e) {
                 awake.acquire(ATTEMPT_MS); // the link may have dropped while the phone slept: stay up to retry
-                state = RETRYING;
-                if (running) setStatus("Reconnecting to " + Config.macName(this));
+                state = macAsleep ? ASLEEP : RETRYING;
+                if (running) setStatus(macAsleep ? Config.macName(this) + " is asleep" : "Reconnecting to " + Config.macName(this));
                 useDiscovery = !useDiscovery; // the Mac's address may have changed
             }
             synchronized (lock) {
@@ -383,8 +403,10 @@ public class LinkService extends Service {
                 out = null;
             }
             if (state == CONNECTED) state = RETRYING;
-            if (linked) lostAt = SystemClock.elapsedRealtime();
+            // An hour "gone" already puts waitToRetry on its slowest schedule; the Mac's knock makes it quick again.
+            if (linked) lostAt = SystemClock.elapsedRealtime() - (macAsleep ? 3_600_000 : 0);
             transfers.onDisconnected();
+            files.onDisconnected();
             waitToRetry();
         }
         awake.release();
@@ -425,6 +447,45 @@ public class LinkService extends Service {
         pause(ms);
         if (alarm) alarms.cancel(retryAlarm);
         awake.acquire(ATTEMPT_MS);
+    }
+
+    /**
+     * The Mac knocks when it's reachable again (it woke, or its app started): one small datagram on our port, sealed
+     * with the pairing key so nothing else on the network can set this off. It arrives even while the phone sleeps,
+     * the way the link's own frames do, and saves waiting for the next retry, which can be minutes away.
+     */
+    private void knockLoop() {
+        byte[] buffer = new byte[256];
+        long last = 0;
+        while (running) {
+            try (DatagramSocket s = new DatagramSocket(Proto.PORT)) {
+                knocks = s;
+                while (running) {
+                    DatagramPacket p = new DatagramPacket(buffer, buffer.length);
+                    s.receive(p);
+                    SecretKey k = key;
+                    if (k == null || state == CONNECTED) continue;
+                    try {
+                        byte[] plain = Proto.open(k, Arrays.copyOf(p.getData(), p.getLength()));
+                        if (plain.length == 0 || plain[0] != Proto.KNOCK) continue;
+                    } catch (GeneralSecurityException | RuntimeException e) {
+                        continue; // not from our Mac
+                    }
+                    long now = SystemClock.elapsedRealtime();
+                    if (now - last < 2_000) continue; // it knocks a few times in case one is lost
+                    last = now;
+                    macAsleep = false;
+                    knocked = true;
+                    lostAt = now; // retry quickly for a while, as after any fresh sign of the Mac
+                    awake.acquire(ATTEMPT_MS);
+                    wake();
+                }
+            } catch (IOException e) {
+                // closed on shutdown, or the port was taken: without knocks the retries still find the Mac
+            }
+            knocks = null;
+            if (running) SystemClock.sleep(30_000);
+        }
     }
 
     /** Wi-Fi, Ethernet or a VPN: a network the Mac can be reached on. Over mobile data its LAN address can't answer. */
@@ -492,6 +553,19 @@ public class LinkService extends Service {
                 break;
             case Proto.PHOTO_GET:
                 photos.onGet(payload);
+                break;
+            case Proto.MAC_SLEEP:
+                macAsleep = true; // the Mac closes the link next
+                break;
+            case Proto.CALL_ACTION:
+                NotifListener calls = NotifListener.instance;
+                if (calls != null) main.post(() -> Calls.act(calls, payload));
+                break;
+            case Proto.DIAL:
+                main.post(() -> Calls.dial(this, payload));
+                break;
+            case Proto.FS_REQUEST:
+                files.onRequest(payload);
                 break;
             case Proto.UPDATE_OFFER:
                 Updater.onOffer(this, payload);

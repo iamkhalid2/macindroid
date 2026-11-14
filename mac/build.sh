@@ -33,7 +33,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>NSBonjourServices</key><array><string>_macindroid._tcp</string></array>
   <key>CFBundleURLTypes</key><array><dict>
     <key>CFBundleURLName</key><string>Macindroid actions</string>
-    <key>CFBundleURLSchemes</key><array><string>macindroid</string></array>
+    <key>CFBundleURLSchemes</key><array><string>macindroid</string><string>tel</string></array>
   </dict></array>
   <key>CFBundleDocumentTypes</key><array><dict>
     <key>CFBundleTypeName</key><string>File</string>

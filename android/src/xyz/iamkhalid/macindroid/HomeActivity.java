@@ -228,7 +228,11 @@ public class HomeActivity extends Activity {
         }
 
         void set(boolean on) {
-            if (key.equals("notifications")) Config.setMirrorNotifications(HomeActivity.this, on);
+            if (key.equals("notifications")) {
+                Config.setMirrorNotifications(HomeActivity.this, on);
+                NotifListener listener = NotifListener.instance; // on: send what's waiting; off: clear them on the Mac
+                if (listener != null && LinkService.connected()) listener.resendActive();
+            }
             else Config.set(HomeActivity.this, key, on);
         }
     }
@@ -246,6 +250,10 @@ public class HomeActivity extends Activity {
                 "New ones pop up on your Mac, ready to copy or drag.");
         addFeature(card, new FeatureRow(Config.LINKS, Ui.P_OVERLAY), R.drawable.ic_f_link, "Open links from your Mac",
                 "Straight away while you're using the phone. Off: they wait in a notification.");
+        addFeature(card, new FeatureRow(Config.CALLS, Ui.P_LISTENER, Ui.P_PHONE), R.drawable.ic_f_call, "Calls",
+                "A ringing call shows on your Mac, with Answer and Decline. Numbers you click there are dialled here.");
+        addFeature(card, new FeatureRow(Config.FILES, Ui.P_FILES), R.drawable.ic_f_folder, "This phone in Finder",
+                "Browse, copy and move this phone's files from your Mac.");
         addFeature(card, new FeatureRow(Config.RING, Ui.P_NOTIFY), R.drawable.ic_f_ring, "Find my phone",
                 "Your Mac can ring this phone, even on silent.");
         addFeature(card, new FeatureRow(Config.MIRROR, Ui.P_USB), R.drawable.ic_f_mirror, "Phone mirroring",
@@ -294,7 +302,7 @@ public class HomeActivity extends Activity {
 
     private Map<String, Ui.Permission> permissionMap() {
         Map<String, Ui.Permission> map = new HashMap<>();
-        for (Ui.Permission p : ui.permissions()) map.put(p.key, p);
+        for (Ui.Permission p : ui.allPermissions()) map.put(p.key, p);
         return map;
     }
 
@@ -483,6 +491,11 @@ public class HomeActivity extends Activity {
                 statusMac.setText(mac + " isn't answering yet");
                 statusDetail.setText("Retrying");
                 waiting = true;
+                break;
+            case LinkService.ASLEEP:
+                statusTitle.setText("Mac asleep");
+                statusMac.setText(mac + " is sleeping");
+                statusDetail.setText("Reconnects when it wakes");
                 break;
             case LinkService.KEY_MISMATCH:
                 statusTitle.setText("Not matching");

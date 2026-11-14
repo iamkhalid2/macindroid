@@ -399,7 +399,7 @@ final class Ui {
     // ------------------------------------------------------------------ permissions, shared by onboarding and home
 
     static final String P_NOTIFY = "notify", P_PHOTOS = "photos", P_CODES = "codes", P_LISTENER = "listener",
-            P_OVERLAY = "overlay", P_BACKGROUND = "background", P_USB = "usb";
+            P_OVERLAY = "overlay", P_BACKGROUND = "background", P_USB = "usb", P_PHONE = "phone", P_FILES = "files";
 
     static final class Permission {
         final String key, title, detail, action;
@@ -444,6 +444,19 @@ final class Ui {
                 power ? "Copies reach your Mac by themselves, and mirroring works over Wi-Fi."
                         : "Optional: copies reach your Mac by themselves, and mirroring works over Wi-Fi. Set up once from your Mac, no cable.",
                 power, "Set up", () -> PowerSetup.start(a)));
+        return list;
+    }
+
+    /** Those, and the ones only a single feature needs, which are asked for on the home screen, not in setup. */
+    List<Permission> allPermissions() {
+        List<Permission> list = permissions();
+        list.add(new Permission(P_PHONE, "Phone calls", "Answers and declines calls from your Mac, and dials numbers you click there.",
+                a.checkSelfPermission(Manifest.permission.ANSWER_PHONE_CALLS) == PackageManager.PERMISSION_GRANTED
+                        && a.checkSelfPermission(Manifest.permission.CALL_PHONE) == PackageManager.PERMISSION_GRANTED, "Allow",
+                () -> a.requestPermissions(new String[] {Manifest.permission.ANSWER_PHONE_CALLS, Manifest.permission.CALL_PHONE}, 3)));
+        list.add(new Permission(P_FILES, "All files access", "Lets your Mac's Finder browse this phone's storage.",
+                PhoneFiles.allowed(), "Allow",
+                () -> a.startActivity(new Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION, Uri.parse("package:" + a.getPackageName())))));
         return list;
     }
 }

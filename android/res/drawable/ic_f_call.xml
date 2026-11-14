@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Feature glyph for the home screen, drawn like the Macindroid mark (1.75 stroke, round caps). Tinted in code. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp" android:height="24dp" android:viewportWidth="24" android:viewportHeight="24">
+    <path android:pathData="M6.5,3.75 H8.9 L10.4,7.6 L8.6,9.1 A10.5,10.5 0 0 0 14.9,15.4 L16.4,13.6 L20.25,15.1 V17.5 A2,2 0 0 1 18.1,19.5 A14.5,14.5 0 0 1 4.5,5.9 A2,2 0 0 1 6.5,3.75 Z" android:strokeColor="#FFFFFFFF" android:strokeWidth="1.75" android:strokeLineCap="round" android:strokeLineJoin="round" />
+</vector>

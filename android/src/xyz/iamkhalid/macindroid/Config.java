@@ -82,7 +82,7 @@ final class Config {
 
     // Features the user can switch off on the home screen. All are on until switched off.
     static final String CLIPBOARD = "clipboard", CODES = "codes", PHOTOS = "photos", LINKS = "links", RING = "ring",
-            MIRROR = "mirror";
+            MIRROR = "mirror", CALLS = "calls", FILES = "finder";
 
     static boolean on(Context c, String feature) {
         return prefs(c).getBoolean("feature." + feature, true);

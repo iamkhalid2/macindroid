@@ -30,8 +30,8 @@ the two systems allow, and holds itself to six things:
 |---|---|
 | **Simple** | Three steps to set up, all by clicking and scanning: no Terminal, no cable, no account. |
 | **Just works** | After that you don't open it. It sits in the menu bar, finds the phone by itself and reconnects within seconds, even with the phone's screen off. |
-| **Very small** | The phone app is a 98 KB download. The Mac app's own code is under 0.8 MB; the 20 MB disk image is mostly [scrcpy](https://github.com/Genymobile/scrcpy) and adb, bundled so mirroring needs nothing else. Idle, the Mac app uses 0.0 % CPU and 35 MB of memory. |
-| **Fully open source** | MIT licensed, about 3,100 lines of Swift and 4,600 of Java, with no third‑party libraries, no analytics and no servers of its own. The bundled scrcpy and adb are the official open‑source builds, checked against pinned checksums. |
+| **Very small** | The phone app is a 110 KB download. The Mac app's own code is about 1.1 MB; the 20 MB disk image is mostly [scrcpy](https://github.com/Genymobile/scrcpy) and adb, bundled so mirroring needs nothing else. Idle, the Mac app uses 0.0 % CPU and 35 MB of memory. |
+| **Fully open source** | MIT licensed, about 4,600 lines of Swift and 5,400 of Java, with no third‑party libraries, no analytics and no servers of its own. The bundled scrcpy and adb are the official open‑source builds, checked against pinned checksums. |
 | **Beautifully designed** | A native menu‑bar app on the Mac; a phone app drawn in the icon's style, with a switch for every feature. |
 | **Feature rich** | Everything below, plus [how it compares](#how-close-to-continuity) with Apple's own Continuity. |
 
@@ -41,10 +41,13 @@ the two systems allow, and holds itself to six things:
 |---|---|
 | **Universal clipboard** | Copy on one, paste on the other: text and images, both ways, in about a quarter of a second. Passwords copied from a password manager are never sent. |
 | **One‑time codes** | A sign‑in or verification code that reaches your phone, by text message or in an app's notification, is on the Mac's clipboard within about a second, ready to paste: *Code 482913 from Google copied*. Clipboard managers don't keep it, and it's cleared after two minutes. |
-| **Notifications on your Mac** | Your phone's notifications appear on the Mac while you aren't using the phone, with Reply and the app's own buttons. Clear one on the Mac and it clears on the phone; click one and it opens on the phone. |
+| **Notifications on your Mac** | Your phone's notifications appear on the Mac while you aren't using the phone, with Reply and the app's own buttons. Clear one on either device and it clears on the other, also when they were apart at the time; click one on the Mac and it opens on the phone. |
 | **Files and links** | Drop files on the menu‑bar icon, or Share → Macindroid on the phone. Files are checksummed and land in Downloads. Send the browser tab you're looking at to the phone in one click. |
 | **Photos and screenshots** | Take a photo or a screenshot on the phone and a preview drops down from the menu‑bar icon: copy it, save it to Downloads or drag it anywhere, at full resolution. |
 | **Mirror your phone** | Use your phone in a window on the Mac, with its sound, over USB or Wi‑Fi, through the bundled [scrcpy](https://github.com/Genymobile/scrcpy). |
+| **Calls** | A call ringing on the phone shows on the Mac with Answer and Decline, for the phone's own calls and for apps like WhatsApp. Click a phone number on the Mac and, once you confirm, the phone dials it. The call's sound stays on the phone or its headset. |
+| **Your phone in Finder** | **Show Phone in Finder** mounts the phone's storage as a disk: browse it, open files, drag things in and out, rename and delete, like any other folder. |
+| **Lock when you leave** | Optional: the Mac locks about a minute after your phone leaves the Wi‑Fi network or is switched off. |
 | **Find your phone** | Ring Phone plays an alarm at full volume, even on silent or Do Not Disturb, until you unlock it or press Stop. |
 | **At a glance** | The menu shows your phone's battery and connection. The menu‑bar icon shows a progress ring while files move and a ringing bell while the phone rings. |
 | **Your choice** | Every feature is on from the start and has its own switch in the phone app. |
@@ -60,14 +63,17 @@ Macindroid stands on each:
 | Security codes from Messages, filled in on the Mac | ✅ Codes from texts *and* apps go straight to the clipboard |
 | AirDrop | ✅ Files both ways, links both ways |
 | iPhone Mirroring | ✅ With sound, keyboard and mouse, over USB or Wi‑Fi |
-| Notifications from iPhone on the Mac | ✅ With Reply and the app's own buttons |
+| Notifications from iPhone on the Mac | ✅ With Reply and the app's own buttons, and clears kept in step both ways |
 | Find My (play a sound) | ✅ Rings even on silent |
 | Continuity Camera: take a photo for the Mac | ◐ New photos and screenshots pop up on the Mac, ready to drag in |
 | Handoff | ◐ Browser tabs and links, not app state |
 | Text Message Forwarding | ◐ Reply to a text from its notification; no conversation view yet |
-| iPhone Cellular Calls | ◐ Missed calls show up on the Mac; ringing calls don't yet |
+| iPhone Cellular Calls | ◐ Ringing calls show with Answer and Decline, and the Mac can dial; the call's sound stays on the phone |
 | Continuity Camera as a webcam | ✗ Needs a macOS camera extension, which needs an Apple developer account |
 | Instant Hotspot, Auto Unlock, Apple Pay, Continuity Sketch, iPhone widgets | ✗ Android or macOS don't let a third‑party app do these |
+
+And two things Continuity doesn't do with an iPhone: the phone's storage as a disk in Finder, and locking the Mac
+when the phone leaves.
 
 ## Set up
 
@@ -76,7 +82,7 @@ Terminal, no cable.
 
 ### 1. On the Mac
 
-Download **`Macindroid-1.1.0.dmg`** from the [latest release](https://github.com/iamkhalid2/macindroid/releases/latest),
+Download **`Macindroid-1.2.0.dmg`** from the [latest release](https://github.com/iamkhalid2/macindroid/releases/latest),
 open it and drag Macindroid into Applications.
 
 <p align="center">
@@ -161,6 +167,19 @@ Android also asks you to let Macindroid install apps: allow it and come back, an
   quiet notice shows which code was copied; click it to copy the code again. Turn this off with **Settings → Copy
   Codes from Phone**.
 - **Reply** to a message straight from the notification on the Mac.
+- **Calls**: when the phone rings, a card drops down from the menu‑bar icon. **Answer** picks the call up on the
+  phone (on its speaker or headset; Android doesn't let the Mac carry the sound) and **Decline** rejects it. To dial
+  from the Mac, tick **Settings → Call Phone Numbers I Click**: phone‑number links then ask *Call …?* and your phone
+  places the call. On the phone, allow **Phone calls** on the Calls row so it dials straight away; without it you get
+  a notification that opens the dialer with the number filled in.
+- **Show Phone in Finder** mounts the phone as a disk named after it. The first time, the phone asks you to allow
+  access to all files. Finder shows its size as unknown; copying works normally. It unmounts when the phone has
+  been gone for a minute.
+- **Lock Mac When Phone Leaves** (in Settings, off until you tick it) locks the Mac about a minute after the phone
+  drops off the Wi‑Fi network or is switched off. It only acts if the phone was connected since you last unlocked,
+  so a Mac used without the phone is left alone. It can't tell when you walk to another room on the same Wi‑Fi.
+  While it's on and the Mac is unlocked, the Mac checks on the phone every 20 seconds, which uses a little of the
+  phone's battery.
 - **Mirror Phone** opens your phone in a window. Clicking a phone notification on the Mac also opens it there.
 - **Shortcuts**: `macindroid://ring`, `macindroid://stop-ring`, `macindroid://mirror`, `macindroid://menu`,
   `macindroid://power-setup` and `macindroid://phone-app` work from Shortcuts, Spotlight, Raycast or `open`. There's deliberately no link for sending files, since any web
@@ -173,6 +192,15 @@ Android also asks you to let Macindroid install apps: allow it and come back, an
   exception: once a day the Mac asks GitHub whether there's a newer Macindroid (an anonymous request for the latest
   release, nothing sent about you); turn it off with **Settings → Check for Updates**. Updates to the phone app
   come from the Mac, so the phone never checks.
+- **Your files stay between the two.** Finder reaches the phone's files through a small server inside the Mac
+  app that listens only on the Mac itself (127.0.0.1), behind a password made up at each launch, and passes every
+  request to the phone over the encrypted link. The phone opens nothing on the network for it, and nothing is kept
+  on the Mac. Finder's own bookkeeping files (`.DS_Store`, `._name`) stay on the Mac.
+- **Calls and numbers aren't logged.** Who is calling and what you dialled never go in a log on either device. A
+  phone‑number link always asks before dialling, since any web page can carry one.
+- **A sleeping Mac is left asleep.** Before it sleeps the Mac tells the phone and stops listening, so the phone
+  doesn't keep waking it. When you open the Mac again it sends the phone one small encrypted "I'm back" message
+  and the two reconnect within a second or so.
 - **Pairing you can check.** The two devices agree a key with X25519. Both screens show a six‑digit code derived
   from that key, so a device in the middle would show a different code. Everything after that is encrypted and
   authenticated with AES‑256‑GCM, using a key derived with HKDF‑SHA256.
@@ -209,8 +237,9 @@ Android also asks you to let Macindroid install apps: allow it and come back, an
 
 Check that both are on the same Wi‑Fi network, and not a guest network: guest networks often keep devices from
 seeing each other. On the Mac, check System Settings → Privacy & Security → Local Network → Macindroid is on. The
-phone reconnects by itself within seconds of the Mac coming back, even with its screen off; once the Mac has been
-gone for half an hour it checks only every few minutes, to save battery, and waking the phone reconnects it at once.
+phone reconnects by itself within seconds of the Mac coming back, even with its screen off: the Mac tells it when
+it wakes. If that message is lost, the phone still checks every few minutes, and waking the phone reconnects it at
+once.
 </details>
 
 <details>
@@ -256,7 +285,7 @@ See [On the Mac](#1-on-the-mac). You can check your download against `SHA256SUMS
 ## Build from source
 
 No Xcode project and no Gradle. The Mac app bundles [scrcpy](https://github.com/Genymobile/scrcpy)'s own macOS
-build (with adb) for mirroring and the phone setup; everything else is about 3,100 lines of Swift (AppKit, Network, CryptoKit) and a
+build (with adb) for mirroring and the phone setup; everything else is about 4,600 lines of Swift (AppKit, Network, CryptoKit) and a
 Java app built with the plain Android SDK tools.
 
 ```bash
@@ -281,7 +310,12 @@ same set on a connected phone too, on Android's own runtime, whose regex engine 
 
 To test the Mac app without a phone, `cd mac && uv run --with cryptography python3 test_client.py` plays the
 phone's part against the running app: ping, a 3 MB file arriving byte‑identical, a corrupted file discarded with
-nothing left behind, and a wrong key refused.
+nothing left behind, the phone app's update, notifications cleared on either side (and while apart) being cleared
+on the other, a ringing call and its buttons, a clicked number being dialled, the phone mounted as a real volume
+(macOS's own file client reading, copying in, renaming and deleting against a folder standing in for the phone),
+the link closing for sleep and reopening on wake, a phone that vanished being noticed, the lock when the phone
+leaves (it only writes that it would lock), and a wrong key refused. It takes about two minutes, and your real
+phone is off the link while it runs.
 
 ## Resource use
 
