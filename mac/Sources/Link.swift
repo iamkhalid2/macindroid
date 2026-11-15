@@ -236,13 +236,14 @@ final class Link {
 
     /// A phone that walked out of Wi-Fi range can vanish without closing the connection, and the Mac would go on
     /// saying it's connected for minutes. So when the Mac has something to send, or the menu opens, and the phone
-    /// has been quiet, it asks; no answer in 10 seconds and the link is dropped. Nothing is sent while idle.
+    /// has been quiet, it asks; no answer in 20 seconds and the link is dropped. (A phone in deep sleep can take
+    /// over 10 to answer.) Nothing is sent while idle.
     func probe() {
         guard let peer = phone, !peer.probing, Date().timeIntervalSince(peer.lastHeard) > 5 else { return }
         peer.probing = true
         send(peer, .ping, Data()) { [weak self, weak peer] sent in
             let asked = Date()
-            DispatchQueue.main.asyncAfter(deadline: .now() + (sent ? 10 : 0)) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + (sent ? (Prefs.debug ? 8 : 20) : 0)) {
                 guard let self, let peer else { return }
                 peer.probing = false
                 guard peer.lastHeard < asked, self.peers[ObjectIdentifier(peer)] != nil else { return }

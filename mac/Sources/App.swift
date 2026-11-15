@@ -63,6 +63,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             case "ring": if !link.ringing { ringPhone() }
             case "stop-ring": if link.ringing { ringPhone() }
             case "mirror": mirror.start()
+            case "files": phoneFiles.showInFinder()
             case "power-setup": power.show()
             case "phone-app": phoneApp.show(update: false)
             case "menu": openMenu(closingAfter: URLComponents(url: url, resolvingAgainstBaseURL: false)?
@@ -70,7 +71,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             case "debug-sleep" where Prefs.debug: link.sleep()
             case "debug-answer" where Prefs.debug: calls.act("answer")
             case "debug-decline" where Prefs.debug: calls.act("decline")
-            case "debug-files" where Prefs.debug: phoneFiles.showInFinder(opening: false)
             case "debug-unmount" where Prefs.debug: phoneFiles.unmount()
             case "debug-wake" where Prefs.debug: link.wake()
             case "debug-clear" where Prefs.debug, "debug-list" where Prefs.debug:

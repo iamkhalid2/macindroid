@@ -402,14 +402,16 @@ stop = threading.Event()
 server = threading.Thread(target=serve_files, args=(sock, store, stop), daemon=True)
 server.start()
 log_size = LOG.stat().st_size
-subprocess.run(["open", "-g", "macindroid://debug-files"], check=True)
+subprocess.run(["open", "-g", "macindroid://files"], check=True)  # the real thing: it opens a Finder window too
 mount = None
 if said("phone files: mounted at ", log_size, 25):
-    mount = Path(LOG.read_text(errors="replace")[log_size:].split("phone files: mounted at ", 1)[1].splitlines()[0])
+    mount = Path(LOG.read_text(errors="replace")[log_size:].split("phone files: mounted at ", 1)[1].splitlines()[0].rsplit(" in ", 1)[0])
 check("macOS mounts the phone as a volume", mount is not None and mount.is_dir())
 if mount:
     try:
         check("the volume lists the phone's files", sorted(os.listdir(mount)) == ["DCIM", "Notes & more.txt"])
+        shown = subprocess.run(["osascript", "-e", 'tell application "Finder" to get name of front window'], capture_output=True, text=True, timeout=20)
+        check("Finder opens a window on it (and the app isn't stuck waiting for itself)", shown.stdout.strip() == mount.name)
         check("a text file reads back, accents and all", (mount / "Notes & more.txt").read_text() == "héllo from the phone" + chr(10))
         check("a 5 MB photo reads back byte-identical", sha(mount / "DCIM" / "photo one.jpg") == sha(store / "DCIM" / "photo one.jpg"))
         with (mount / "DCIM" / "photo one.jpg").open("rb") as fh:

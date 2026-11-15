@@ -3,7 +3,7 @@
 # clipboard and on-demand wireless mirroring). Pairing happens in the app afterwards, with no cable.
 #
 #   ./setup-phone.sh                          uses a Macindroid-*.apk next to this script, or builds one from source
-#   ./setup-phone.sh ~/Downloads/Macindroid-1.2.0.apk
+#   ./setup-phone.sh ~/Downloads/Macindroid-1.2.1.apk
 set -euo pipefail
 PKG=xyz.iamkhalid.macindroid
 ADB="${ADB:-adb}"

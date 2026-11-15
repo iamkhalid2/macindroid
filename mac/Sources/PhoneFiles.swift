@@ -37,6 +37,10 @@ final class PhoneFiles {
     fileprivate let password = UUID().uuidString + UUID().uuidString
     fileprivate let nonce = UUID().uuidString
 
+    /// `defaults write xyz.iamkhalid.macindroid logFiles -bool true` (or test_client.py running) logs every request
+    /// Finder makes, with file names. Off otherwise: only requests that took over 3 seconds, without names.
+    fileprivate static var verbose: Bool { Prefs.debug || UserDefaults.standard.bool(forKey: "logFiles") }
+
     /// Where it's mounted, while it is.
     private(set) var mountPoint: String? {
         get { UserDefaults.standard.string(forKey: "filesMount") }
@@ -126,13 +130,24 @@ final class PhoneFiles {
     // MARK: the volume
 
     /// The menu item: mount it if it isn't, then open it in Finder.
+    ///
+    /// Nothing here may touch the volume from the main thread (open it, ask whether it's mounted, unmount it):
+    /// macOS answers such calls by asking the volume, the volume is this app, and this app answers on the main
+    /// thread. So those calls go to a background queue.
     func showInFinder(opening: Bool = true) {
-        if let mountPoint, Self.isMounted(mountPoint) {
-            if opening { NSWorkspace.shared.open(URL(fileURLWithPath: mountPoint)) }
+        if let path = mountPoint {
+            Self.background.async { [self] in
+                if Self.isMounted(path) {
+                    if opening { NSWorkspace.shared.open(URL(fileURLWithPath: path)) }
+                } else {
+                    DispatchQueue.main.async { self.mountPoint = nil; self.showInFinder(opening: opening) } // ejected in Finder
+                }
+            }
             return
         }
         guard link.connected, !mounting else { return }
         mounting = true
+        let asked = Date()
         ask(["op": "stat", "path": "/"]) { [self] reply in // can the phone do this at all?
             guard let reply, reply.ok else {
                 mounting = false
@@ -164,8 +179,8 @@ final class PhoneFiles {
                             return
                         }
                         self.mountPoint = path
-                        log("phone files: mounted at \(path)")
-                        if opening { NSWorkspace.shared.open(URL(fileURLWithPath: path)) }
+                        log("phone files: mounted at \(path) in \(Int(Date().timeIntervalSince(asked) * 1000)) ms")
+                        if opening { Self.background.async { NSWorkspace.shared.open(URL(fileURLWithPath: path)) } }
                     }
                 }
             }
@@ -188,11 +203,17 @@ final class PhoneFiles {
         return type == "webdav"
     }
 
-    /// Off the main thread: unmounting makes macOS send its last requests, and this app has to answer them.
+    private static let background = DispatchQueue(label: "macindroid.volume", qos: .userInitiated)
+
+    /// `wait` (the app is quitting): give it two seconds, without the fallback that needs this app to answer.
     private static func forceUnmount(_ path: String, wait: Bool = false) {
-        guard isMounted(path) else { return }
-        let work = { if Darwin.unmount(path, MNT_FORCE) != 0 { _ = Tools.run("/usr/sbin/diskutil", ["unmount", "force", path], timeout: 20) } }
-        if wait { work() } else { DispatchQueue.global(qos: .userInitiated).async(execute: work) }
+        let done = DispatchSemaphore(value: 0)
+        background.async {
+            defer { done.signal() }
+            guard isMounted(path) else { return }
+            if Darwin.unmount(path, MNT_FORCE) != 0, !wait { _ = Tools.run("/usr/sbin/diskutil", ["unmount", "force", path], timeout: 20) }
+        }
+        if wait { _ = done.wait(timeout: .now() + 2) }
     }
 
     /// Starts the WebDAV server (once) and gives its port.
@@ -291,6 +312,7 @@ private final class DAVConnection {
     private var chunked = false
     private var chunkLeft = -1 // -1: a size line is next; -2: the line break after a chunk; -3: the trailers
     private var open = true
+    private var began = Date()
 
     private static let httpDate: DateFormatter = {
         let f = DateFormatter()
@@ -422,7 +444,9 @@ private final class DAVConnection {
 
     /// A whole answer, then on to the next request. `after` closes instead (when the request's body wasn't read).
     private func respond(_ status: Int, _ extra: [(String, String)] = [], body: Data = Data(), closing: Bool = false) {
-        if Prefs.debug { log("dav: \(method) \(target) -> \(status)") }
+        let took = Date().timeIntervalSince(began)
+        if PhoneFiles.verbose { log("dav: \(method) \(target) -> \(status) in \(Int(took * 1000)) ms") }
+        else if took > 3 { log("phone files: a \(method) took \(Int(took)) s (\(status))") } // never the file's name
         var out = head(status, extra + (closing ? [("Connection", "close")] : []), length: Int64(body.count))
         if method != "HEAD" { out.append(body) }
         connection.send(content: out, completion: .contentProcessed { [weak self] _ in
@@ -470,7 +494,8 @@ private final class DAVConnection {
         chunked = headers["transfer-encoding"]?.lowercased().contains("chunked") == true
         bodyLeft = chunked ? 0 : Int(headers["content-length"] ?? "") ?? 0
         chunkLeft = -1
-        if Prefs.debug { log("dav: > \(method) \(target) depth \(headers["depth"] ?? "-") length \(headers["content-length"] ?? (chunked ? "chunked" : "-"))") }
+        began = Date()
+        if PhoneFiles.verbose { log("dav: > \(method) \(target) depth \(headers["depth"] ?? "-") length \(headers["content-length"] ?? (chunked ? "chunked" : "-")) range \(headers["range"] ?? "-")") }
         if headers["expect"]?.lowercased() == "100-continue" {
             connection.send(content: Data("HTTP/1.1 100 Continue\r\n\r\n".utf8), completion: .contentProcessed { _ in })
         }

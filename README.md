@@ -82,7 +82,7 @@ Terminal, no cable.
 
 ### 1. On the Mac
 
-Download **`Macindroid-1.2.0.dmg`** from the [latest release](https://github.com/iamkhalid2/macindroid/releases/latest),
+Download **`Macindroid-1.2.1.dmg`** from the [latest release](https://github.com/iamkhalid2/macindroid/releases/latest),
 open it and drag Macindroid into Applications.
 
 <p align="center">
@@ -181,7 +181,7 @@ Android also asks you to let Macindroid install apps: allow it and come back, an
   While it's on and the Mac is unlocked, the Mac checks on the phone every 20 seconds, which uses a little of the
   phone's battery.
 - **Mirror Phone** opens your phone in a window. Clicking a phone notification on the Mac also opens it there.
-- **Shortcuts**: `macindroid://ring`, `macindroid://stop-ring`, `macindroid://mirror`, `macindroid://menu`,
+- **Shortcuts**: `macindroid://ring`, `macindroid://stop-ring`, `macindroid://mirror`, `macindroid://files`, `macindroid://menu`,
   `macindroid://power-setup` and `macindroid://phone-app` work from Shortcuts, Spotlight, Raycast or `open`. There's deliberately no link for sending files, since any web
   page can open a link.
 
