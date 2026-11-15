@@ -57,16 +57,27 @@ final class PhoneFiles {
     func start() {
         if let old = mountPoint { Self.forceUnmount(old) }
         mountPoint = nil
-        // And one whose mount was still under way when the app last quit: a WebDAV volume on this Mac's own
-        // address, named after the phone.
-        var list: UnsafeMutablePointer<statfs>?
-        let count = getmntinfo(&list, MNT_NOWAIT)
-        guard let list, let name = volume.addingPercentEncoding(withAllowedCharacters: Self.pathCharacters) else { return }
-        for i in 0..<Int(count) {
-            var fs = list[i]
-            let from = withUnsafePointer(to: &fs.f_mntfromname) { $0.withMemoryRebound(to: CChar.self, capacity: Int(MAXPATHLEN)) { String(cString: $0) } }
-            let on = withUnsafePointer(to: &fs.f_mntonname) { $0.withMemoryRebound(to: CChar.self, capacity: Int(MAXPATHLEN)) { String(cString: $0) } }
-            if from.hasPrefix("http://127.0.0.1:"), from.hasSuffix("/\(name)/") { Self.forceUnmount(on) }
+        clearStale {}
+    }
+
+    /// Unmounts volumes left by an earlier run of the app (its mount was under way when it quit, or it was killed):
+    /// WebDAV volumes on this Mac's own address, named after the phone, on a port that isn't this run's. One left
+    /// behind has nothing answering it and would stop a new one mounting under the same name.
+    private func clearStale(_ then: @escaping () -> Void) {
+        let name = volume, mine = listener?.port?.rawValue
+        Self.background.async {
+            var list: UnsafeMutablePointer<statfs>?
+            let count = getmntinfo(&list, MNT_NOWAIT)
+            for i in 0..<Int(count) {
+                guard var fs = list?[i] else { continue }
+                let from = withUnsafePointer(to: &fs.f_mntfromname) { $0.withMemoryRebound(to: CChar.self, capacity: Int(MAXPATHLEN)) { String(cString: $0) } }
+                let on = withUnsafePointer(to: &fs.f_mntonname) { $0.withMemoryRebound(to: CChar.self, capacity: Int(MAXPATHLEN)) { String(cString: $0) } }
+                guard from.hasPrefix("http://127.0.0.1:"), let url = URL(string: from), url.lastPathComponent == name,
+                      mine == nil || url.port != Int(mine!) else { continue }
+                if Darwin.unmount(on, MNT_FORCE) != 0 { _ = Tools.run("/usr/sbin/diskutil", ["unmount", "force", on], timeout: 20) }
+                log("phone files: cleared a volume left by an earlier run")
+            }
+            DispatchQueue.main.async(execute: then)
         }
     }
 
@@ -161,7 +172,7 @@ final class PhoneFiles {
                 log("phone files: not available (\(reply?.error ?? "no answer"))")
                 return
             }
-            serve { [self] port in
+            serve { [self] port in clearStale { [self] in
                 guard let port, let name = volume.addingPercentEncoding(withAllowedCharacters: Self.pathCharacters),
                       let url = URL(string: "http://127.0.0.1:\(port)/\(name)/") else { mounting = false; return }
                 let user = user, password = password
@@ -183,7 +194,7 @@ final class PhoneFiles {
                         if opening { Self.background.async { NSWorkspace.shared.open(URL(fileURLWithPath: path)) } }
                     }
                 }
-            }
+            } }
         }
     }
 

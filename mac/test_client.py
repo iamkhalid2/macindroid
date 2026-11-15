@@ -129,6 +129,7 @@ def leave_it_as_it_was() -> None:
     """Also when a check throws: the Mac is listening again and the real phone can reconnect."""
     subprocess.run(["open", "-g", "macindroid://debug-unmount"])
     subprocess.run(["open", "-g", "macindroid://debug-wake"])
+    subprocess.run(["defaults", "delete", DOMAIN, "debugPingHost"], capture_output=True)
     time.sleep(0.5)
     if lock_was:
         subprocess.run(["defaults", "write", DOMAIN, "lockWhenAway", "-bool", "true"])
@@ -410,8 +411,14 @@ check("macOS mounts the phone as a volume", mount is not None and mount.is_dir()
 if mount:
     try:
         check("the volume lists the phone's files", sorted(os.listdir(mount)) == ["DCIM", "Notes & more.txt"])
-        shown = subprocess.run(["osascript", "-e", 'tell application "Finder" to get name of front window'], capture_output=True, text=True, timeout=20)
-        check("Finder opens a window on it (and the app isn't stuck waiting for itself)", shown.stdout.strip() == mount.name)
+        front = ""
+        for _ in range(20):  # Finder takes a moment to bring the window up
+            front = subprocess.run(["osascript", "-e", 'tell application "Finder" to get name of front window'],
+                                   capture_output=True, text=True, timeout=20).stdout.strip()
+            if front == mount.name:
+                break
+            time.sleep(0.5)
+        check("Finder opens a window on it (and the app isn't stuck waiting for itself)", front == mount.name)
         check("a text file reads back, accents and all", (mount / "Notes & more.txt").read_text() == "héllo from the phone" + chr(10))
         check("a 5 MB photo reads back byte-identical", sha(mount / "DCIM" / "photo one.jpg") == sha(store / "DCIM" / "photo one.jpg"))
         with (mount / "DCIM" / "photo one.jpg").open("rb") as fh:
@@ -439,7 +446,7 @@ if mount:
     except OSError as e:
         check(f"file operations on the volume ({e})", False)
     subprocess.run(["open", "-g", "macindroid://debug-unmount"], check=True)
-    for _ in range(40):
+    for _ in range(100):  # Finder has it open, so macOS may take a while to let go
         if not os.path.ismount(mount):
             break
         time.sleep(0.25)
@@ -512,26 +519,45 @@ sock.close()
 sock = connect()
 read_kind(sock, HELLO)
 
-# ---- lock when the phone leaves (while testing the Mac only writes that it would lock)
+# ---- lock when the phone leaves (while testing the Mac only writes that it would lock). What decides it is whether
+# the phone's address still answers a ping; the test names the address: this Mac (always answers) or one that never does
+def ping_host(address: str) -> None:
+    subprocess.run(["defaults", "write", DOMAIN, "debugPingHost", address], check=True)
+    time.sleep(0.5)
+
+
 subprocess.run(["defaults", "write", DOMAIN, "lockWhenAway", "-bool", "true"], check=True)
-time.sleep(0.5)
+ping_host("127.0.0.1")
 sock.close()
 sock = connect()  # connecting arms it
 read_kind(sock, HELLO)
 log_size = LOG.stat().st_size
-sock.close()  # the phone blinks out and is back within the grace period
-time.sleep(1.5)
-sock = connect()
-read_kind(sock, HELLO)
-time.sleep(6)
-check("a phone that's gone for a moment doesn't lock the Mac", "would lock" not in LOG.read_text(errors="replace")[log_size:])
-log_size = LOG.stat().st_size  # now it stops answering, like a phone carried out of Wi-Fi range
-check("a phone that leaves locks the Mac", said("would lock the Mac now", log_size, 35))
-sock.close()
+sock.close()  # the link goes, as when a sleeping phone falls off it, but the phone's address still answers
+time.sleep(9)
+check("a phone asleep on the desk (link gone, address still answering) doesn't lock the Mac",
+      "would lock" not in LOG.read_text(errors="replace")[log_size:])
 log_size = LOG.stat().st_size
-time.sleep(6)
+ping_host("192.0.2.1")  # an address that never answers: now it has really left the network
+check("a phone that leaves the network locks the Mac", said("would lock the Mac now", log_size, 25))
+log_size = LOG.stat().st_size
+time.sleep(8)
 check("and it locks once, not again while the phone stays away", "would lock" not in LOG.read_text(errors="replace")[log_size:])
+sock = connect()  # back, and connected: silence from the address alone doesn't lock
+read_kind(sock, HELLO)
+log_size = LOG.stat().st_size
+sock.settimeout(1)
+until = time.time() + 9
+while time.time() < until:  # the address is silent, so the Mac asks over the link; this phone answers
+    try:
+        if read_frame(sock)[0] == PING:
+            sock.sendall(frame(PONG, b""))
+    except TimeoutError:
+        pass
+sock.settimeout(5)
+check("a connected phone on a network that drops pings doesn't lock the Mac", "would lock" not in LOG.read_text(errors="replace")[log_size:])
 subprocess.run(["defaults", "delete", DOMAIN, "lockWhenAway"], capture_output=True)
+subprocess.run(["defaults", "delete", DOMAIN, "debugPingHost"], capture_output=True)
+sock.close()
 sock = connect()
 read_kind(sock, HELLO)
 

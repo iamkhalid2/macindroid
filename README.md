@@ -47,7 +47,7 @@ the two systems allow, and holds itself to six things:
 | **Mirror your phone** | Use your phone in a window on the Mac, with its sound, over USB or Wi‑Fi, through the bundled [scrcpy](https://github.com/Genymobile/scrcpy). |
 | **Calls** | A call ringing on the phone shows on the Mac with Answer and Decline, for the phone's own calls and for apps like WhatsApp. Click a phone number on the Mac and, once you confirm, the phone dials it. The call's sound stays on the phone or its headset. |
 | **Your phone in Finder** | **Show Phone in Finder** mounts the phone's storage as a disk: browse it, open files, drag things in and out, rename and delete, like any other folder. |
-| **Lock when you leave** | Optional: the Mac locks about a minute after your phone leaves the Wi‑Fi network or is switched off. |
+| **Lock when you leave** | Optional: the Mac locks about 40 seconds after your phone leaves the Wi‑Fi network or is switched off. A phone asleep on the desk doesn't count as gone. |
 | **Find your phone** | Ring Phone plays an alarm at full volume, even on silent or Do Not Disturb, until you unlock it or press Stop. |
 | **At a glance** | The menu shows your phone's battery and connection. The menu‑bar icon shows a progress ring while files move and a ringing bell while the phone rings. |
 | **Your choice** | Every feature is on from the start and has its own switch in the phone app. |
@@ -82,7 +82,7 @@ Terminal, no cable.
 
 ### 1. On the Mac
 
-Download **`Macindroid-1.2.1.dmg`** from the [latest release](https://github.com/iamkhalid2/macindroid/releases/latest),
+Download **`Macindroid-1.2.2.dmg`** from the [latest release](https://github.com/iamkhalid2/macindroid/releases/latest),
 open it and drag Macindroid into Applications.
 
 <p align="center">
@@ -175,11 +175,11 @@ Android also asks you to let Macindroid install apps: allow it and come back, an
 - **Show Phone in Finder** mounts the phone as a disk named after it. The first time, the phone asks you to allow
   access to all files. Finder shows its size as unknown; copying works normally. It unmounts when the phone has
   been gone for a minute.
-- **Lock Mac When Phone Leaves** (in Settings, off until you tick it) locks the Mac about a minute after the phone
-  drops off the Wi‑Fi network or is switched off. It only acts if the phone was connected since you last unlocked,
-  so a Mac used without the phone is left alone. It can't tell when you walk to another room on the same Wi‑Fi.
-  While it's on and the Mac is unlocked, the Mac checks on the phone every 20 seconds, which uses a little of the
-  phone's battery.
+- **Lock Mac When Phone Leaves** (in Settings, off until you tick it) locks the Mac about 40 seconds after the
+  phone leaves the Wi‑Fi network or is switched off. It goes by whether the phone's address still answers on the
+  network, not by the app's link, so a phone asleep on the desk never locks you out. It only acts if the phone was
+  connected since you last unlocked, so a Mac used without the phone is left alone. It can't tell when you walk
+  to another room on the same Wi‑Fi.
 - **Mirror Phone** opens your phone in a window. Clicking a phone notification on the Mac also opens it there.
 - **Shortcuts**: `macindroid://ring`, `macindroid://stop-ring`, `macindroid://mirror`, `macindroid://files`, `macindroid://menu`,
   `macindroid://power-setup` and `macindroid://phone-app` work from Shortcuts, Spotlight, Raycast or `open`. There's deliberately no link for sending files, since any web

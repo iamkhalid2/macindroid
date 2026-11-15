@@ -252,7 +252,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         sub.addItem(phoneLinks)
         let away = item("Lock Mac When Phone Leaves", #selector(toggleAwayLock))
         away.state = AwayLock.enabled ? .on : .off
-        away.toolTip = "Locks this Mac about a minute after your phone leaves the Wi-Fi network or is switched off"
+        away.toolTip = "Locks this Mac about 40 seconds after your phone leaves the Wi-Fi network or is switched off"
         sub.addItem(away)
         sub.addItem(.separator())
         let login = item("Open at Login", #selector(toggleLogin), enabled: !LoginItem.managedByAgent)
